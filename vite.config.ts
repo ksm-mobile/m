@@ -4,8 +4,8 @@ import path from 'path';
 import { defineConfig } from 'vite';
 
 export default defineConfig({
-  // Exact GitHub Pages repository path.
-  base: '/Mobile-POS/',
+  // GitHub repository URL: https://ksm-mobile.github.io/m/
+  base: '/m/',
   plugins: [react(), tailwindcss()],
   resolve: {
     alias: {
