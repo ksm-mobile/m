@@ -18,6 +18,8 @@ const blankDraft: Draft = { productId:'', supplier:'', invoiceNo:'', quantity:'1
 export const PurchasesView: React.FC<Props> = ({ purchases, inventory, showPurchaseModal, setShowPurchaseModal, handleSavePurchase, isSaving, lang }) => {
   const [query, setQuery] = useState('');
   const [draft, setDraft] = useState<Draft>(blankDraft);
+  const [productSearch, setProductSearch] = useState('');
+  const [showProductResults, setShowProductResults] = useState(false);
   const safePurchases = Array.isArray(purchases) ? purchases : [];
   const safeInventory = Array.isArray(inventory) ? inventory : [];
   const total = safePurchases.reduce((s, p) => s + Number(p.total || 0), 0);
@@ -25,7 +27,13 @@ export const PurchasesView: React.FC<Props> = ({ purchases, inventory, showPurch
   const due = Math.max(0, total - paid);
   const filtered = useMemo(() => safePurchases.filter(p => `${p.supplier} ${p.productname} ${p.productid} ${p.invoiceno}`.toLowerCase().includes(query.toLowerCase())), [safePurchases, query]);
 
-  useEffect(() => { if (!showPurchaseModal) setDraft(blankDraft); }, [showPurchaseModal]);
+  useEffect(() => {
+    if (!showPurchaseModal) {
+      setDraft(blankDraft);
+      setProductSearch('');
+      setShowProductResults(false);
+    }
+  }, [showPurchaseModal]);
   const set = (key:keyof Draft, value:string) => setDraft(d => ({...d,[key]:value}));
 
   const loadLastPurchase = (productId:string) => {
@@ -44,8 +52,33 @@ export const PurchasesView: React.FC<Props> = ({ purchases, inventory, showPurch
     }));
   };
 
+
+  const selectedProduct = useMemo(() => safeInventory.find(p => String(p.id || p.productid) === String(draft.productId)), [safeInventory, draft.productId]);
+  const filteredProducts = useMemo(() => {
+    const q = productSearch.trim().toLowerCase();
+    if (!q) return safeInventory.slice(0, 30);
+    return safeInventory.filter(p => {
+      const text = [p.brand, p.model, p.barcode, p.category, p.id, p.productid]
+        .filter(Boolean)
+        .join(' ')
+        .toLowerCase();
+      return text.includes(q);
+    }).slice(0, 50);
+  }, [safeInventory, productSearch]);
+
+  const chooseProduct = (productId:string) => {
+    loadLastPurchase(productId);
+    const product = safeInventory.find(p => String(p.id || p.productid) === String(productId));
+    setProductSearch(product ? `${product.brand || ''} ${product.model || ''}`.trim() : '');
+    setShowProductResults(false);
+  };
+
   const reusePurchase = (p:PurchaseRecord) => {
-    setDraft({ productId:String(p.productid||''), supplier:String(p.supplier||''), invoiceNo:'', quantity:'1', unitCost:String(p.unitcost||''), paidAmount:'0', paymentMethod:String(p.paymentmethod||'Cash'), remark:String(p.remark||''), costMode:'average' });
+    const productId = String(p.productid || '');
+    const product = safeInventory.find(item => String(item.id || item.productid) === productId);
+    setDraft({ productId, supplier:String(p.supplier||''), invoiceNo:'', quantity:'1', unitCost:String(p.unitcost||''), paidAmount:'0', paymentMethod:String(p.paymentmethod||'Cash'), remark:String(p.remark||''), costMode:'average' });
+    setProductSearch(product ? `${product.brand || ''} ${product.model || ''}`.trim() : String(p.productname || productId));
+    setShowProductResults(false);
     setShowPurchaseModal(true);
   };
 
@@ -75,13 +108,38 @@ export const PurchasesView: React.FC<Props> = ({ purchases, inventory, showPurch
     {showPurchaseModal && <div className="fixed inset-0 z-50 bg-slate-950/70 p-3 flex items-center justify-center"><div className="w-full max-w-2xl max-h-[95vh] overflow-y-auto bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800">
       <div className="p-5 flex justify-between border-b border-slate-100 dark:border-slate-800"><h3 className="font-black flex gap-2"><PackagePlus size={20}/>{lang === 'mm'?'စတော့ဝယ်ယူမှု ထည့်ရန်':'Add Stock Purchase'}</h3><button onClick={()=>setShowPurchaseModal(false)}><X/></button></div>
       <form onSubmit={handleSavePurchase} className="p-5 space-y-4">
-        <Field label={lang==='mm'?'ပစ္စည်းရွေးပါ':'Inventory Product'}><select name="productId" required className="input" value={draft.productId} onChange={e=>loadLastPurchase(e.target.value)}><option value="">-- Select product --</option>{safeInventory.map(p=><option key={p.id||p.productid} value={p.id||p.productid}>{p.brand} {p.model} (Stock: {p.stock})</option>)}</select></Field>
+        <Field label={lang==='mm'?'ပစ္စည်းရှာပြီး ရွေးပါ':'Search Inventory Product'}>
+          <div className="relative">
+            <Search size={17} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none"/>
+            <input
+              className="input pl-11 pr-10"
+              value={productSearch}
+              onChange={e=>{ setProductSearch(e.target.value); setShowProductResults(true); if (draft.productId) set('productId',''); }}
+              onFocus={()=>setShowProductResults(true)}
+              placeholder={lang==='mm'?'ပစ္စည်းအမည်၊ Barcode၊ Category ဖြင့်ရှာပါ...':'Search name, barcode, category or ID...'}
+              autoComplete="off"
+            />
+            {productSearch && <button type="button" onClick={()=>{setProductSearch('');set('productId','');setShowProductResults(true)}} className="absolute right-3 top-1/2 -translate-y-1/2 p-1 text-slate-400"><X size={16}/></button>}
+            <input type="hidden" name="productId" value={draft.productId}/>
+            {showProductResults && <div className="absolute z-30 mt-2 w-full max-h-64 overflow-y-auto rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 shadow-2xl">
+              {filteredProducts.length ? filteredProducts.map(p=>{
+                const id = String(p.id || p.productid || '');
+                return <button type="button" key={id} onClick={()=>chooseProduct(id)} className="w-full text-left px-4 py-3 border-b last:border-b-0 border-slate-100 dark:border-slate-800 hover:bg-blue-50 dark:hover:bg-slate-800">
+                  <div className="font-black text-sm">{p.brand} {p.model}</div>
+                  <div className="text-[10px] text-slate-400 mt-1">{p.category || '-'} • Barcode: {p.barcode || '-'} • Stock: {p.stock ?? 0}</div>
+                </button>
+              }) : <div className="p-4 text-center text-xs text-slate-400">{lang==='mm'?'ပစ္စည်းမတွေ့ပါ':'No product found'}</div>}
+            </div>}
+          </div>
+          {draft.productId && selectedProduct && <div className="mt-2 rounded-xl bg-emerald-50 dark:bg-slate-800 px-3 py-2 text-xs font-bold text-emerald-700 dark:text-emerald-400">✓ {selectedProduct.brand} {selectedProduct.model} — Stock: {selectedProduct.stock ?? 0}</div>}
+          {!draft.productId && <div className="mt-1 text-[10px] text-amber-500">{lang==='mm'?'အပေါ်က Search မှ ပစ္စည်းတစ်ခု ရွေးပါ။':'Please select one product from the search results.'}</div>}
+        </Field>
         {draft.productId && <div className="text-[11px] rounded-xl bg-blue-50 dark:bg-slate-800 p-3">{lang==='mm'?'နောက်ဆုံးဝယ်ယူခဲ့သော Supplier နှင့် Unit Cost ကို အလိုအလျောက်ဖြည့်ထားပါသည်။ လိုသလိုပြင်နိုင်ပါသည်။':'Last supplier and unit cost were loaded automatically. You can change them.'}</div>}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4"><Field label={lang==='mm'?'ပစ္စည်းပေးသွင်းသူ':'Supplier'}><input name="supplier" required className="input" value={draft.supplier} onChange={e=>set('supplier',e.target.value)}/></Field><Field label="Invoice No"><input name="invoiceNo" className="input" value={draft.invoiceNo} onChange={e=>set('invoiceNo',e.target.value)}/></Field></div>
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4"><Field label={lang==='mm'?'အရေအတွက်':'Quantity'}><input name="quantity" type="number" min="1" required className="input" value={draft.quantity} onChange={e=>set('quantity',e.target.value)}/></Field><Field label={lang==='mm'?'တစ်ခုဝယ်စျေး':'Unit Cost (MMK)'}><input name="unitCost" type="number" min="0" required className="input" value={draft.unitCost} onChange={e=>set('unitCost',e.target.value)}/></Field><Field label={lang==='mm'?'ပေးချေပြီးငွေ':'Paid Amount'}><input name="paidAmount" type="number" min="0" className="input" value={draft.paidAmount} onChange={e=>set('paidAmount',e.target.value)}/></Field></div>
         <Field label={lang==='mm'?'Inventory Cost Price ပြင်နည်း':'Inventory Cost Price Method'}><select name="costMode" className="input" value={draft.costMode} onChange={e=>set('costMode',e.target.value)}><option value="average">Weighted Average — old stock + new purchase</option><option value="latest">Update to New Price — use this purchase price</option><option value="keep">Keep Old Price — do not change inventory cost</option></select></Field>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4"><Field label={lang==='mm'?'ငွေပေးချေမှု':'Payment Method'}><select name="paymentMethod" className="input" value={draft.paymentMethod} onChange={e=>set('paymentMethod',e.target.value)}><option>Cash</option><option>Bank Transfer</option><option>KBZPay</option><option>WavePay</option><option>Credit</option></select></Field><Field label={lang==='mm'?'မှတ်ချက်':'Remark'}><input name="remark" className="input" value={draft.remark} onChange={e=>set('remark',e.target.value)}/></Field></div>
-        <button disabled={isSaving} className="w-full py-4 bg-blue-600 text-white rounded-xl font-black text-xs flex justify-center gap-2"><Save size={16}/>{isSaving?'Saving...':(lang==='mm'?'ဝယ်ယူမှုသိမ်းမည်':'Save Purchase')}</button>
+        <button disabled={isSaving || !draft.productId} className="w-full py-4 disabled:opacity-50 disabled:cursor-not-allowed bg-blue-600 text-white rounded-xl font-black text-xs flex justify-center gap-2"><Save size={16}/>{isSaving?'Saving...':(lang==='mm'?'ဝယ်ယူမှုသိမ်းမည်':'Save Purchase')}</button>
       </form>
     </div></div>}
   </div>;
