@@ -5,6 +5,10 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="theme-color" content="#020617" />
     <title>KSM POS</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+      tailwind.config = { darkMode: 'class' };
+    </script>
     <style>
       html,body,#root{min-height:100%;margin:0}
       body{background:#020617;font-family:Arial,sans-serif}
@@ -16,9 +20,8 @@
   <body>
     <div id="root">
       <div class="deploy-help">
-        <h1>KSM POS is building...</h1>
-        <p>Open the GitHub repository, choose <code>Settings → Pages → Source → GitHub Actions</code>, then open <code>Actions → Deploy KSM POS → Run workflow</code>.</p>
-        <p>The completed website will replace this message automatically.</p>
+        <h1>Loading KSM POS…</h1>
+        <p>Please wait while the application starts.</p>
       </div>
     </div>
     <script type="module" src="/src/main.tsx"></script>
