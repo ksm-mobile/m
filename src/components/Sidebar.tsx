@@ -14,6 +14,7 @@ import {
   PackagePlus 
 } from 'lucide-react';
 import { User } from '../types';
+import { BrandLogo } from './BrandLogo';
 
 interface SidebarProps {
   activeView: string;
@@ -66,15 +67,13 @@ export const Sidebar: React.FC<SidebarProps> = ({
         {/* Brand Header */}
         <div className="p-6 flex items-center justify-between border-b border-[#3949ab] bg-[#1a237e]">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-indigo-500 text-white rounded-lg flex items-center justify-center font-black text-lg shadow-md">
-              {storeLogo || 'TS'}
-            </div>
+            <BrandLogo customLogo={storeLogo} className="w-12 h-12 rounded-xl bg-white/95 p-1.5 shadow-lg ring-1 ring-white/20" />
             <div className="flex flex-col">
               <span className="font-bold text-white tracking-tight leading-tight text-base truncate max-w-[130px]">
                 {storeName || 'KSM'}
               </span>
               <span className="text-[10px] text-indigo-200 font-bold uppercase tracking-widest mt-0.5">
-                INVENTORY & POS
+                SMART MOBILE POS
               </span>
             </div>
           </div>

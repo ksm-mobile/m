@@ -273,8 +273,8 @@ export default function App() {
 
   // Store Settings
   const [storeName, setStoreName] = useState(localStorage.getItem('ksm_store_name') || 'KSM POS');
-  const [storeTagline, setStoreTagline] = useState(localStorage.getItem('ksm_store_tagline') || 'POS & SERVICES STUDIO');
-  const [storeLogo, setStoreLogo] = useState(localStorage.getItem('ksm_store_logo') || 'TS');
+  const [storeTagline, setStoreTagline] = useState(localStorage.getItem('ksm_store_tagline') || 'SMART MOBILE POS');
+  const [storeLogo, setStoreLogo] = useState(localStorage.getItem('ksm_store_logo') || `${import.meta.env.BASE_URL}ksm-logo.png`);
   const [storeFooter, setStoreFooter] = useState(localStorage.getItem('ksm_store_footer') || 'THANK YOU FOR YOUR PATRONAGE!\nKSM Warranty Secured');
   const [storePaperSize, setStorePaperSize] = useState<'80mm' | 'A5' | 'A4'>((localStorage.getItem('ksm_store_paper_size') as any) || '80mm');
 

@@ -380,7 +380,7 @@ export const initialStaff: User[] = [
 export const initialSettings: StoreSettings = {
   store_name: 'KSM POS',
   store_tagline: 'POS & PHONE SERVICES STUDIO',
-  store_logo: 'TS',
+  store_logo: 'https://cdn.jsdelivr.net/gh/loneeddy/imglink@main/KSMm.png',
   store_footer: 'THANK YOU FOR YOUR PATRONAGE!\nKSM Warranty & Genuine Service Secured',
   store_paper_size: '80mm',
   gas_web_app_url: ''

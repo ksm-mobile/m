@@ -19,3 +19,8 @@ Default local login PINs when no Apps Script is connected:
 
 - Admin: `1234`
 - Staff: `1111`
+
+
+## KSM Branding
+
+This edition includes the official KSM logo, branded loading screen, browser favicon, Apple touch icon, installable PWA manifest, sidebar/login/receipt branding, and mobile header logo.

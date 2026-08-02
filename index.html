@@ -3,7 +3,18 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="theme-color" content="#020617" />
+    <meta name="theme-color" content="#1d4ed8" />
+    <meta name="application-name" content="KSM POS" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="KSM POS" />
+    <meta name="description" content="KSM Smart Mobile POS – sales, stock, purchases, repairs and expenses." />
+    <meta property="og:title" content="KSM POS" />
+    <meta property="og:description" content="Smart Mobile POS for KSM." />
+    <meta property="og:image" content="./ksm-logo.png" />
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <link rel="icon" type="image/png" sizes="32x32" href="./ksm-logo-32.png" />
+    <link rel="apple-touch-icon" sizes="180x180" href="./ksm-logo-180.png" />
     <title>KSM POS</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
@@ -15,13 +26,16 @@
       .deploy-help{box-sizing:border-box;max-width:720px;margin:80px auto;padding:24px;color:#e2e8f0;background:#0f172a;border:1px solid #334155;border-radius:18px;line-height:1.6}
       .deploy-help h1{margin-top:0;color:#60a5fa}
       .deploy-help code{background:#020617;padding:3px 7px;border-radius:6px;color:#fbbf24}
+      .brand-loader{text-align:center}.brand-loader img{width:min(280px,75%);height:90px;object-fit:contain;margin:auto}.brand-loader h1{margin:12px 0 4px}.loading-bar{height:5px;background:#1e293b;border-radius:999px;overflow:hidden;margin-top:18px}.loading-bar span{display:block;height:100%;width:45%;background:#3b82f6;border-radius:999px;animation:ksm-load 1.15s ease-in-out infinite}@keyframes ksm-load{0%{transform:translateX(-120%)}100%{transform:translateX(240%)}}
     </style>
   </head>
   <body>
     <div id="root">
-      <div class="deploy-help">
-        <h1>Loading KSM POS…</h1>
-        <p>Please wait while the application starts.</p>
+      <div class="deploy-help brand-loader">
+        <img src="./ksm-logo.png" alt="KSM POS" />
+        <h1>KSM POS</h1>
+        <p>Smart Mobile POS is loading…</p>
+        <div class="loading-bar"><span></span></div>
       </div>
     </div>
     <script type="module" src="/src/main.tsx"></script>

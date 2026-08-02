@@ -8,6 +8,7 @@ import {
 } from 'lucide-react';
 import { User } from '../types';
 import { callRpc } from '../api';
+import { BrandLogo } from './BrandLogo';
 
 interface LoginModalProps {
   setCurrentUser: (u: User | null) => void;
@@ -77,9 +78,7 @@ export const LoginModal: React.FC<LoginModalProps> = ({
 
       <div className="w-full max-w-sm bg-slate-900/60 p-8 rounded-[2.5rem] shadow-2xl flex flex-col items-center z-10 border border-slate-800 backdrop-blur-md">
         {/* Brand Logo */}
-        <div className="w-14 h-14 bg-blue-600 rounded-2xl flex items-center justify-center text-white font-black text-xl shadow-lg shadow-blue-500/20 mb-3">
-          {storeLogo || 'TS'}
-        </div>
+        <BrandLogo customLogo={storeLogo} showGlow className="w-28 h-20 rounded-2xl bg-white/95 p-2 shadow-2xl shadow-blue-500/20 mb-4 ring-1 ring-white/15" />
         <h2 className="text-lg font-black tracking-tight text-white uppercase">{storeName || 'KSM POS'}</h2>
         <p className="text-[9px] font-bold text-slate-500 uppercase tracking-widest mb-6">{storeTagline || 'POS & SERVICES STUDIO'}</p>
 

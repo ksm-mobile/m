@@ -11,6 +11,7 @@ import {
   Sliders 
 } from 'lucide-react';
 import { User } from '../types';
+import { BrandLogo } from './BrandLogo';
 
 interface HeaderProps {
   activeView: string;
@@ -55,6 +56,7 @@ export const Header: React.FC<HeaderProps> = ({
         >
           <Menu size={22} />
         </button>
+        <BrandLogo className="lg:hidden w-14 h-9 rounded-lg bg-white dark:bg-slate-800 p-1 ring-1 ring-slate-200 dark:ring-slate-700" />
 
         <div className="flex items-center gap-3">
           <h1 className="hidden sm:block text-base lg:text-lg font-bold tracking-tight text-gray-800 dark:text-white uppercase mr-1 whitespace-nowrap">

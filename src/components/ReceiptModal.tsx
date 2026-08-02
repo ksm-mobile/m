@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { X, Printer } from 'lucide-react';
 import { ReceiptData } from '../types';
+import { BrandLogo } from './BrandLogo';
 
 interface ReceiptModalProps {
   currentReceipt: ReceiptData;
@@ -36,9 +37,7 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({
       <div className="bg-white dark:bg-slate-900 rounded-3xl shadow-2xl w-full max-w-sm overflow-hidden p-6 lg:p-8 border border-slate-200 dark:border-slate-800">
         {/* Receipt Header */}
         <div className="text-center space-y-1 mb-6">
-          <div className="w-12 h-12 bg-blue-600 rounded-2xl flex items-center justify-center text-white font-black text-xl mx-auto shadow-lg shadow-blue-500/20">
-            {storeLogo || 'TS'}
-          </div>
+          <BrandLogo customLogo={storeLogo} className="w-28 h-16 rounded-xl bg-white p-1.5 mx-auto shadow-md ring-1 ring-slate-200" />
           <h4 className="text-base font-black text-slate-800 dark:text-white pt-2 tracking-tight uppercase">
             {currentReceipt.type}
           </h4>
