@@ -38,6 +38,16 @@ export const RepairsView: React.FC<RepairsViewProps> = ({
   lang,
   t,
 }) => {
+  const formatEnglishDateTime = (value?: string) => {
+    if (!value) return '-';
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return String(value);
+    return new Intl.DateTimeFormat('en-GB', {
+      day: '2-digit', month: '2-digit', year: 'numeric',
+      hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true
+    }).format(date);
+  };
+
   const filteredRepairs = (repairs || []).filter(job => {
     const matchSearch = searchQuery ? (
       String(job.device).toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -90,9 +100,17 @@ export const RepairsView: React.FC<RepairsViewProps> = ({
                       </span>
                     </div>
                     <div className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-                      Customer: <strong className="text-slate-700 dark:text-slate-200">{job.customername}</strong> ({job.phone}) • {job.createdat}
+                      Customer: <strong className="text-slate-700 dark:text-slate-200">{job.customername}</strong> ({job.phone})
                     </div>
-                    <div className="text-xs text-slate-500 dark:text-slate-400 italic mt-0.5">
+                    <div className="mt-1.5 flex flex-wrap gap-2 text-[10px] font-bold">
+                      <span className="px-2 py-1 rounded-lg bg-blue-50 text-blue-700 dark:bg-blue-950/50 dark:text-blue-300">
+                        Start Time: {formatEnglishDateTime(job.starttime || job.createdat)}
+                      </span>
+                      <span className="px-2 py-1 rounded-lg bg-emerald-50 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300">
+                        Finish Time: {formatEnglishDateTime(job.finishtime)}
+                      </span>
+                    </div>
+                    <div className="text-xs text-slate-500 dark:text-slate-400 italic mt-1">
                       Issue: {job.issue}
                     </div>
                     {job.remark && (
@@ -157,6 +175,9 @@ export const RepairsView: React.FC<RepairsViewProps> = ({
             </div>
 
             <form onSubmit={handleSaveRepair} className="p-6 space-y-4 max-h-[80vh] overflow-y-auto custom-scrollbar">
+              <div className="rounded-xl bg-blue-50 dark:bg-blue-950/40 px-4 py-3 text-[11px] font-bold text-blue-700 dark:text-blue-300">
+                Repair Start Time is recorded automatically when this ticket is saved. Finish Time is recorded automatically when status changes to Done or Delivered. All times use English date/time format on the webpage and Google Sheet.
+              </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-[10px] font-black text-slate-400 uppercase mb-1.5">{t('customer')}</label>

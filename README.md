@@ -24,3 +24,11 @@ Default local login PINs when no Apps Script is connected:
 ## KSM Branding
 
 This edition includes the official KSM logo, branded loading screen, browser favicon, Apple touch icon, installable PWA manifest, sidebar/login/receipt branding, and mobile header logo.
+
+
+## v10 updates
+- Repair Start Time is saved automatically in English format.
+- Repair Finish Time is saved when status becomes Done or Delivered.
+- Inventory supports Brand New and Used / Second Hand conditions.
+- Accessories include charging cable, charging head, cable+head, earphones, screen protector, case, PowerBank, other, and ငွေဖြည့်ကဒ်.
+- Re-run `setupDatabase()` after updating Apps Script so headers are upgraded.
