@@ -1,0 +1,6 @@
+{
+  "name": "KSM Phone Shop POS Dashboard",
+  "description": "Comprehensive Phone Shop Management & POS Dashboard featuring inventory control, POS sales checkout, repair service workflow, financial reports, PIN security, thermal receipt printing, and Google Apps Script integration.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

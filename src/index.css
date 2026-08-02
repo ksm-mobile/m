@@ -1,0 +1,50 @@
+@import "tailwindcss";
+
+/* html5-qrcode mobile scanner */
+.ksm-scanner-shell #ksm-barcode-reader {
+  border: 0 !important;
+  background: #020617;
+}
+.ksm-scanner-shell #ksm-barcode-reader > div:first-child {
+  border: 0 !important;
+}
+.ksm-scanner-shell #ksm-barcode-reader video {
+  width: 100% !important;
+  max-height: 52dvh !important;
+  object-fit: cover !important;
+}
+.ksm-scanner-shell #ksm-barcode-reader img {
+  max-width: 58px;
+  margin-inline: auto;
+  filter: invert(1);
+  opacity: .7;
+}
+.ksm-scanner-shell #ksm-barcode-reader button,
+.ksm-scanner-shell #ksm-barcode-reader select {
+  min-height: 42px;
+  margin: 6px !important;
+  padding: 8px 12px !important;
+  border-radius: 10px !important;
+  border: 1px solid #64748b !important;
+  background: #334155 !important;
+  color: #fff !important;
+  font-weight: 800 !important;
+}
+.ksm-scanner-shell #ksm-barcode-reader a {
+  color: #93c5fd !important;
+  font-weight: 700;
+}
+.ksm-scanner-shell #ksm-barcode-reader__dashboard_section {
+  padding: 12px !important;
+  color: #e2e8f0 !important;
+}
+.ksm-scanner-shell #ksm-barcode-reader__scan_region {
+  min-height: 220px;
+  background: #020617;
+}
+@media (max-width: 640px) {
+  .ksm-scanner-shell #ksm-barcode-reader video { max-height: 44dvh !important; }
+  .ksm-scanner-shell #ksm-barcode-reader__dashboard_section_csr span { display: block; }
+}
+.input { width:100%; padding:.75rem 1rem; border-radius:.75rem; background:#f1f5f9; color:#0f172a; font-size:.75rem; font-weight:700; outline:none; }
+.dark .input { background:#1e293b; color:#e2e8f0; }
