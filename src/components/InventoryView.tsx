@@ -579,7 +579,7 @@ export const InventoryView: React.FC<InventoryViewProps> = ({
                   <select 
                     name="type" 
                     value={addCategory} 
-                    onChange={(e) => { setAddCategory(e.target.value); if (e.target.value !== 'Accessories') setAddModel(''); }} 
+                    onChange={(e) => setAddCategory(e.target.value)} 
                     className="w-full px-4 py-3 bg-slate-100 dark:bg-slate-800 rounded-xl text-xs font-bold outline-none text-slate-800 dark:text-slate-200 cursor-pointer"
                   >
                     {productCategories.map(category => (
@@ -595,7 +595,7 @@ export const InventoryView: React.FC<InventoryViewProps> = ({
                     <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">
                       {lang === 'mm' ? 'ဆက်စပ်ပစ္စည်း အမျိုးအစား' : 'Accessory Category'}
                     </label>
-                    <select name="accessory_type" onChange={(e) => { if (!addModel) setAddModel(e.target.value); }} className="w-full px-4 py-3 bg-slate-100 dark:bg-slate-800 rounded-xl text-xs font-bold outline-none text-slate-800 dark:text-slate-200 cursor-pointer">
+                    <select name="accessory_type" className="w-full px-4 py-3 bg-slate-100 dark:bg-slate-800 rounded-xl text-xs font-bold outline-none text-slate-800 dark:text-slate-200 cursor-pointer">
                       {accessoryCategories.map(category => (
                         <option key={category} value={category}>{category}</option>
                       ))}
@@ -603,7 +603,7 @@ export const InventoryView: React.FC<InventoryViewProps> = ({
                   </div>
                 ) : (
                   <div>
-                    <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">{lang === 'mm' ? 'ပစ္စည်းအခြေအနေ' : 'Item Condition'}</label>
+                    <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">Condition</label>
                     <select 
                       name="grade" 
                       value={addCondition} 

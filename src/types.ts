@@ -28,8 +28,6 @@ export interface InventoryItem {
   status?: string;
   imei?: string;
   grade?: string;
-  accessorytype?: string;
-  accessoryType?: string;
   specification?: string;
   // Normalized lowercase field names for compatibility with GAS display values
   costprice?: number;
@@ -94,8 +92,6 @@ export interface RepairJob {
   fee: number;
   total: number;
   createdat: string;
-  starttime?: string;
-  finishtime?: string;
   remark?: string;
   condition?: string;
 }

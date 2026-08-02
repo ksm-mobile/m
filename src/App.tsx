@@ -246,12 +246,12 @@ export default function App() {
 
   const [activeView, setActiveView] = useState('dashboard');
   const defaultCategories = ['Phone', 'Accessories', 'Computer', 'Service Parts', 'Others'];
-  const defaultAccessoryCategories = ['အားသွင်းကြိုး', 'အားသွင်းခေါင်း', 'အားသွင်းကြိုး+ခေါင်း', 'နားကြပ်', 'မှန်မကွဲ', 'ကာဗာ', 'PowerBank', 'အခြား', 'ငွေဖြည့်ကဒ်'];
+  const defaultAccessoryCategories = ['အားသွင်းကြိုး', 'အားသွင်းခေါင်း', 'အားသွင်းကြိုး+ခေါင်း', 'နားကြပ်', 'မှန်မကွဲ', 'ကာဗာ', 'PowerBank', 'အခြား'];
   const [productCategories, setProductCategories] = useState<string[]>(() => {
     try { const saved = JSON.parse(localStorage.getItem('ksm_product_categories') || '[]'); return Array.isArray(saved) && saved.length ? saved : defaultCategories; } catch { return defaultCategories; }
   });
   const [accessoryCategories, setAccessoryCategories] = useState<string[]>(() => {
-    try { const saved = JSON.parse(localStorage.getItem('ksm_accessory_categories') || '[]'); return Array.isArray(saved) && saved.length ? Array.from(new Set([...saved, ...defaultAccessoryCategories])) : defaultAccessoryCategories; } catch { return defaultAccessoryCategories; }
+    try { const saved = JSON.parse(localStorage.getItem('ksm_accessory_categories') || '[]'); return Array.isArray(saved) && saved.length ? saved : defaultAccessoryCategories; } catch { return defaultAccessoryCategories; }
   });
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [lang, setLang] = useState(localStorage.getItem('ksm_lang') || 'en');
@@ -584,7 +584,6 @@ export default function App() {
       price: Number((form.elements.namedItem('price') as HTMLInputElement).value),
       stock: Number((form.elements.namedItem('stock') as HTMLInputElement).value),
       grade: (form.elements.namedItem('grade') as HTMLSelectElement)?.value || 'New',
-      accessoryType: (form.elements.namedItem('accessory_type') as HTMLSelectElement)?.value || '',
       imei: (form.elements.namedItem('imei') as HTMLInputElement)?.value || '-',
       barcode: (form.elements.namedItem('barcode') as HTMLInputElement)?.value || '-',
       imageId: (form.elements.namedItem('imageId') as HTMLInputElement)?.value || ''
@@ -616,8 +615,7 @@ export default function App() {
       condition: (form.elements.namedItem('condition') as HTMLInputElement).value || '-',
       total: Number((form.elements.namedItem('total') as HTMLInputElement).value),
       remark: (form.elements.namedItem('remark') as HTMLInputElement)?.value || '',
-      fee: 0,
-      startTime: new Date().toISOString()
+      fee: 0
     };
 
     callRpc('saveRepair', formData)
@@ -683,7 +681,7 @@ export default function App() {
   };
 
   const handleUpdateStatus = (ticketId: string, newStatus: RepairStatus) => {
-    callRpc('updateRepairStatus', { id: ticketId, status: newStatus, finishTime: (newStatus === 'Done' || newStatus === 'Delivered') ? new Date().toISOString() : '' })
+    callRpc('updateRepairStatus', { id: ticketId, status: newStatus })
       .then(() => refreshAll())
       .catch(err => alert(err.toString()));
   };
