@@ -683,7 +683,7 @@ export default function App() {
   };
 
   const handleUpdateStatus = (ticketId: string, newStatus: RepairStatus) => {
-    callRpc('updateRepairStatus', { id: ticketId, status: newStatus, finishTime: (newStatus === 'Done' || newStatus === 'Delivered') ? new Date().toISOString() : '' })
+    callRpc('updateRepairStatus', { id: ticketId, status: newStatus, finishTime: (newStatus === 'Done' || newStatus === 'Delivered' || newStatus === 'Reject') ? new Date().toISOString() : '' })
       .then(() => refreshAll())
       .catch(err => alert(err.toString()));
   };

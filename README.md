@@ -1,3 +1,13 @@
+# KSM POS v12
+
+## Repair timestamp fix
+- Converts Myanmar digits in old timestamps to English digits.
+- Displays and saves all timestamps as `MM/DD/YYYY hh:mm:ss AM/PM`.
+- Start Time is saved when the repair is created.
+- Finish Time is saved for Done, Delivered, or Reject.
+- Reopening as Pending or Repairing clears Finish Time.
+- Run `setupDatabase()` after replacing Code.gs to migrate existing timestamps.
+
 # KSM POS v7
 
 ## GitHub Pages deployment

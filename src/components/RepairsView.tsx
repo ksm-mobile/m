@@ -124,7 +124,7 @@ export const RepairsView: React.FC<RepairsViewProps> = ({
                       value={job.status} 
                       onChange={(e) => handleUpdateStatus(job.ticketid, e.target.value as RepairStatus)}
                       className={`text-xs font-black uppercase tracking-wider px-3 py-1.5 rounded-xl border-none outline-none cursor-pointer ${
-                        job.status === 'Done' ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/80 dark:text-emerald-400' :
+                        (job.status === 'Done' || job.status === 'Delivered') ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/80 dark:text-emerald-400' :
                         job.status === 'Pending' ? 'bg-amber-100 text-amber-800 dark:bg-amber-950/80 dark:text-amber-400' :
                         job.status === 'Reject' ? 'bg-red-100 text-red-800 dark:bg-red-950/80 dark:text-red-400' :
                         job.status === 'Delivered' ? 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300' :
@@ -167,7 +167,7 @@ export const RepairsView: React.FC<RepairsViewProps> = ({
 
             <form onSubmit={handleSaveRepair} className="p-6 space-y-4 max-h-[80vh] overflow-y-auto custom-scrollbar">
               <div className="rounded-xl bg-blue-50 dark:bg-blue-950/40 px-4 py-3 text-[11px] font-bold text-blue-700 dark:text-blue-300">
-                Repair Start Time is recorded automatically when this ticket is saved. Finish Time is recorded automatically when status changes to Done or Delivered. All times use US English format (MM/DD/YYYY, hh:mm:ss AM/PM) on the webpage and Google Sheet.
+                Repair Start Time is recorded automatically when this ticket is saved. Finish Time is recorded automatically when status changes to Done, Delivered, or Reject. Changing the job back to Pending or Repairing clears Finish Time. All times use US English format (MM/DD/YYYY, hh:mm:ss AM/PM) on the webpage and Google Sheet.
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>

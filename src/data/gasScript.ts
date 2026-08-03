@@ -113,8 +113,14 @@ function handleRpcRequest(method, data) {
           for (var r = 1; r < repRows.length; r++) {
             if (String(repRows[r][0]) === String(data.id)) {
               repSheetUp.getRange(r + 1, 8).setValue(data.status); // Status
-              if ((data.status === 'Done' || data.status === 'Delivered') && !repRows[r][12]) {
-                repSheetUp.getRange(r + 1, 13).setValue(formatUSDateTime_(data.finishTime ? new Date(data.finishTime) : new Date()));
+              var isFinished = data.status === 'Done' || data.status === 'Delivered' || data.status === 'Reject';
+              if (isFinished) {
+                // Always ensure a closed repair has an English finish timestamp.
+                var finishDate = parseFlexibleDate_(data.finishTime) || parseFlexibleDate_(repRows[r][12]) || new Date();
+                repSheetUp.getRange(r + 1, 13).setValue(formatUSDateTime_(finishDate));
+              } else {
+                // Reopening a job removes its finish timestamp.
+                repSheetUp.getRange(r + 1, 13).clearContent();
               }
               break;
             }
@@ -361,16 +367,92 @@ function setupDatabase() {
     settingsSheet.appendRow(['store_logo', 'KSM']);
   }
 
-  return 'KSM POS Database Sheets Created Successfully!';
+  normalizeAllDateTimes_();
+  return 'KSM POS Database Sheets Created and all timestamps converted to English successfully!';
 }
 
 
+function toEnglishDigits_(value) {
+  var map = {'၀':'0','၁':'1','၂':'2','၃':'3','၄':'4','၅':'5','၆':'6','၇':'7','၈':'8','၉':'9'};
+  return String(value === null || value === undefined ? '' : value).replace(/[၀-၉]/g, function(d) { return map[d] || d; });
+}
+
+function parseFlexibleDate_(value) {
+  if (value instanceof Date && !isNaN(value.getTime())) return value;
+  if (value === null || value === undefined || value === '') return null;
+  var original = String(value);
+  var raw = toEnglishDigits_(original).trim();
+  var m = raw.match(/^(\d{1,2})[\/-](\d{1,2})[\/-](\d{4})(?:\s+(\d{1,2}):(\d{2})(?::(\d{2}))?\s*(AM|PM)?)?$/i);
+  if (m) {
+    var first = Number(m[1]);
+    var second = Number(m[2]);
+    var year = Number(m[3]);
+    var hour = Number(m[4] || 0);
+    var minute = Number(m[5] || 0);
+    var secondValue = Number(m[6] || 0);
+    var meridiem = String(m[7] || '').toUpperCase();
+    var hadMyanmarDigits = /[၀-၉]/.test(original);
+    var month = hadMyanmarDigits ? second : first;
+    var day = hadMyanmarDigits ? first : second;
+    if (first > 12) { day = first; month = second; }
+    if (second > 12) { month = first; day = second; }
+    if (meridiem === 'PM' && hour < 12) hour += 12;
+    if (meridiem === 'AM' && hour === 12) hour = 0;
+    var parsed = new Date(year, month - 1, day, hour, minute, secondValue);
+    return isNaN(parsed.getTime()) ? null : parsed;
+  }
+  var fallback = new Date(raw);
+  return isNaN(fallback.getTime()) ? null : fallback;
+}
+
 function formatUSDateTime_(date) {
-  return Utilities.formatDate(date, Session.getScriptTimeZone() || 'Asia/Yangon', 'MM/dd/yyyy hh:mm:ss a');
+  var parsed = parseFlexibleDate_(date) || new Date();
+  return Utilities.formatDate(parsed, Session.getScriptTimeZone() || 'Asia/Yangon', 'MM/dd/yyyy hh:mm:ss a');
 }
 
 function formatUSDate_(date) {
-  return Utilities.formatDate(date, Session.getScriptTimeZone() || 'Asia/Yangon', 'MM/dd/yyyy');
+  var parsed = parseFlexibleDate_(date) || new Date();
+  return Utilities.formatDate(parsed, Session.getScriptTimeZone() || 'Asia/Yangon', 'MM/dd/yyyy');
+}
+
+function normalizeAllDateTimes_() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var configs = {
+    'Sales': [1],
+    'Purchases': [1],
+    'Expenses': [1],
+    'Repairs': [11, 12, 13]
+  };
+  Object.keys(configs).forEach(function(sheetName) {
+    var sheet = ss.getSheetByName(sheetName);
+    if (!sheet || sheet.getLastRow() < 2) return;
+    var lastRow = sheet.getLastRow();
+    configs[sheetName].forEach(function(column) {
+      var range = sheet.getRange(2, column, lastRow - 1, 1);
+      var values = range.getValues();
+      for (var i = 0; i < values.length; i++) {
+        if (values[i][0] === '' || values[i][0] === null) continue;
+        var parsed = parseFlexibleDate_(values[i][0]);
+        if (parsed) values[i][0] = sheetName === 'Expenses' ? formatUSDate_(parsed) : formatUSDateTime_(parsed);
+        else values[i][0] = toEnglishDigits_(values[i][0]);
+      }
+      range.setValues(values);
+      range.setNumberFormat('@');
+    });
+  });
+
+  // Close old repair rows that already have a terminal status but no finish time.
+  var repairs = ss.getSheetByName('Repairs');
+  if (repairs && repairs.getLastRow() >= 2) {
+    var rows = repairs.getRange(2, 1, repairs.getLastRow() - 1, Math.max(repairs.getLastColumn(), 14)).getValues();
+    for (var r = 0; r < rows.length; r++) {
+      var status = String(rows[r][7] || '');
+      if ((status === 'Done' || status === 'Delivered' || status === 'Reject') && !rows[r][12]) {
+        rows[r][12] = formatUSDateTime_(new Date());
+      }
+    }
+    repairs.getRange(2, 1, rows.length, rows[0].length).setValues(rows);
+  }
 }
 
 function ensureHeaders_(sheet, headers) {
@@ -435,7 +517,15 @@ function getSheetDataAsObjects(ss, sheetName) {
     var obj = {};
     for (var j = 0; j < headers.length; j++) {
       var key = String(headers[j]).toLowerCase().replace(/[^a-z0-9]/g, '');
-      obj[key] = row[j];
+      var cellValue = row[j];
+      if (key === 'timestamp' || key === 'createdat' || key === 'starttime' || key === 'finishtime') {
+        var parsedDateTime = parseFlexibleDate_(cellValue);
+        cellValue = parsedDateTime ? formatUSDateTime_(parsedDateTime) : toEnglishDigits_(cellValue);
+      } else if (key === 'date') {
+        var parsedDate = parseFlexibleDate_(cellValue);
+        cellValue = parsedDate ? formatUSDate_(parsedDate) : toEnglishDigits_(cellValue);
+      }
+      obj[key] = cellValue;
     }
     result.push(obj);
   }
