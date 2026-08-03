@@ -1,3 +1,4 @@
+import { formatUSDateTime } from '../utils/dateTime';
 import React, { useEffect, useMemo, useState } from 'react';
 import { Plus, X, Save, Truck, PackagePlus, Search, RotateCcw } from 'lucide-react';
 import { InventoryItem, PurchaseRecord } from '../types';
@@ -96,7 +97,7 @@ export const PurchasesView: React.FC<Props> = ({ purchases, inventory, showPurch
       <div className="px-5 py-4 border-b border-slate-100 dark:border-slate-800 font-black text-xs uppercase">{lang === 'mm' ? 'ဝယ်ယူမှုမှတ်တမ်း' : 'Purchase History'} ({filtered.length})</div>
       <div className="divide-y divide-slate-100 dark:divide-slate-800">
         {filtered.length ? filtered.map((p,i)=><div key={`${p.purchaseno}-${i}`} className="p-5 grid grid-cols-1 md:grid-cols-6 gap-3 items-center">
-          <div className="md:col-span-2 flex gap-3"><div className="w-10 h-10 rounded-xl bg-blue-50 dark:bg-slate-800 flex items-center justify-center text-blue-600"><Truck size={18}/></div><div><div className="font-black text-sm">{p.productname || p.productid}</div><div className="text-[10px] text-slate-400">{p.supplier} • {p.date}</div></div></div>
+          <div className="md:col-span-2 flex gap-3"><div className="w-10 h-10 rounded-xl bg-blue-50 dark:bg-slate-800 flex items-center justify-center text-blue-600"><Truck size={18}/></div><div><div className="font-black text-sm">{p.productname || p.productid}</div><div className="text-[10px] text-slate-400">{p.supplier} • {formatUSDateTime(p.date)}</div></div></div>
           <div className="text-xs"><span className="text-slate-400">Qty:</span> <b>{p.quantity}</b><br/><span className="text-slate-400">Cost:</span> <b>{Number(p.unitcost||0).toLocaleString()}</b></div>
           <div className="text-xs"><span className="text-slate-400">Invoice:</span> <b>{p.invoiceno || '-'}</b><br/><span className="text-slate-400">Payment:</span> <b>{p.paymentmethod}</b></div>
           <div><div className="font-black">{Number(p.total||0).toLocaleString()} MMK</div><div className={`text-[10px] font-bold ${Number(p.balance||0)>0?'text-amber-500':'text-emerald-500'}`}>{Number(p.balance||0)>0?`Due ${Number(p.balance).toLocaleString()}`:'PAID'}</div></div>

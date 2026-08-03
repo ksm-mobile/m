@@ -1,3 +1,4 @@
+import { formatUSDate } from '../utils/dateTime';
 import React from 'react';
 import { 
   Wallet, 
@@ -71,7 +72,7 @@ export const ExpensesView: React.FC<ExpensesViewProps> = ({
                     <div className="flex gap-2 items-center mt-0.5">
                       <span className="text-[10px] text-slate-500 dark:text-slate-400 font-bold uppercase tracking-wider">{ex.category}</span>
                       <span className="text-[10px] text-slate-300 dark:text-slate-600">•</span>
-                      <span className="text-[10px] text-slate-400 font-mono">{ex.date}</span>
+                      <span className="text-[10px] text-slate-400 font-mono">{formatUSDate(ex.date)}</span>
                     </div>
                   </div>
                 </div>

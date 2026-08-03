@@ -496,6 +496,12 @@ export const InventoryView: React.FC<InventoryViewProps> = ({
                   )}
                   <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">{item.brand}</div>
                   <div className="text-xl font-black text-slate-800 dark:text-white mb-2 leading-snug uppercase tracking-tight line-clamp-2">{item.model}</div>
+
+                  {(item.accessorytype || item.accessoryType) && (
+                    <div className="inline-flex mb-3 px-2.5 py-1 rounded-lg bg-violet-100 text-violet-700 dark:bg-violet-950/50 dark:text-violet-300 text-[9px] font-black uppercase tracking-wider">
+                      Accessory Type: {item.accessorytype || item.accessoryType}
+                    </div>
+                  )}
                   
                   {item.specification && item.specification !== '-' && (
                     <div className="text-[11px] text-slate-500 dark:text-slate-400 mb-4 italic line-clamp-2 leading-relaxed">
@@ -579,7 +585,7 @@ export const InventoryView: React.FC<InventoryViewProps> = ({
                   <select 
                     name="type" 
                     value={addCategory} 
-                    onChange={(e) => setAddCategory(e.target.value)} 
+                    onChange={(e) => { setAddCategory(e.target.value); if (e.target.value !== 'Accessories') setAddModel(''); }} 
                     className="w-full px-4 py-3 bg-slate-100 dark:bg-slate-800 rounded-xl text-xs font-bold outline-none text-slate-800 dark:text-slate-200 cursor-pointer"
                   >
                     {productCategories.map(category => (
@@ -595,7 +601,7 @@ export const InventoryView: React.FC<InventoryViewProps> = ({
                     <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">
                       {lang === 'mm' ? 'ဆက်စပ်ပစ္စည်း အမျိုးအစား' : 'Accessory Category'}
                     </label>
-                    <select name="accessory_type" className="w-full px-4 py-3 bg-slate-100 dark:bg-slate-800 rounded-xl text-xs font-bold outline-none text-slate-800 dark:text-slate-200 cursor-pointer">
+                    <select name="accessory_type" defaultValue={accessoryCategories[0] || ''} onChange={(e) => { if (!addModel) setAddModel(e.target.value); }} className="w-full px-4 py-3 bg-slate-100 dark:bg-slate-800 rounded-xl text-xs font-bold outline-none text-slate-800 dark:text-slate-200 cursor-pointer">
                       {accessoryCategories.map(category => (
                         <option key={category} value={category}>{category}</option>
                       ))}
@@ -603,7 +609,7 @@ export const InventoryView: React.FC<InventoryViewProps> = ({
                   </div>
                 ) : (
                   <div>
-                    <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">Condition</label>
+                    <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">{lang === 'mm' ? 'ပစ္စည်းအခြေအနေ' : 'Item Condition'}</label>
                     <select 
                       name="grade" 
                       value={addCondition} 

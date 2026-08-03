@@ -1,3 +1,4 @@
+import { formatUSDateTime } from '../utils/dateTime';
 import React, { useMemo } from 'react';
 import { 
   TrendingUp, 
@@ -438,7 +439,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                     <div className="min-w-0">
                       <div className="font-semibold text-xs text-gray-800 dark:text-slate-100 truncate">{sale.type}</div>
                       <div className="text-[11px] text-gray-500 dark:text-slate-400">
-                        {sale.voucherno || 'Voucher'} • {sale.customer} • {sale.timestamp}
+                        {sale.voucherno || 'Voucher'} • {sale.customer} • {formatUSDateTime(sale.timestamp)}
                       </div>
                     </div>
                   </div>

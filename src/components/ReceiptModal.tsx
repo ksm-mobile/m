@@ -1,3 +1,4 @@
+import { formatUSDateTime } from '../utils/dateTime';
 import React, { useState } from 'react';
 import { X, Printer } from 'lucide-react';
 import { ReceiptData } from '../types';
@@ -50,7 +51,7 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({
         <div className="space-y-4 mb-6">
           <div className="flex justify-between items-center text-[10px] font-mono font-bold text-slate-400 uppercase tracking-widest border-b border-slate-100 dark:border-slate-800 pb-2">
             <span>Ref: {currentReceipt.id}</span>
-            <span>{currentReceipt.date}</span>
+            <span>{formatUSDateTime(currentReceipt.date)}</span>
           </div>
 
           <div className="text-[10px] font-bold text-slate-700 dark:text-slate-300 border-b border-slate-100 dark:border-slate-800 pb-2 uppercase">

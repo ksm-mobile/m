@@ -47,6 +47,12 @@ function handleRpcRequest(method, data) {
         result = getSheetDataAsObjects(ss, 'Expenses');
         break;
 
+      case 'getPurchaseData':
+      case 'getPurchases':
+      case 'getPurchasesData':
+        result = getSheetDataAsObjects(ss, 'Purchases');
+        break;
+
       case 'getSalesHistory':
         result = getSheetDataAsObjects(ss, 'Sales');
         break;
@@ -80,6 +86,7 @@ function handleRpcRequest(method, data) {
           data.status || 'Active',
           data.imei || '-',
           data.grade || 'New',
+          data.accessoryType || data.accessorytype || '',
           data.specification || '-'
         ]);
         result = { status: 'success', id: nextId };
@@ -105,7 +112,10 @@ function handleRpcRequest(method, data) {
           var repRows = repSheetUp.getDataRange().getValues();
           for (var r = 1; r < repRows.length; r++) {
             if (String(repRows[r][0]) === String(data.id)) {
-              repSheetUp.getRange(r + 1, 8).setValue(data.status); // Column 8 is Status
+              repSheetUp.getRange(r + 1, 8).setValue(data.status); // Status
+              if ((data.status === 'Done' || data.status === 'Delivered') && !repRows[r][12]) {
+                repSheetUp.getRange(r + 1, 13).setValue(formatUSDateTime_(data.finishTime ? new Date(data.finishTime) : new Date()));
+              }
               break;
             }
           }
@@ -195,7 +205,7 @@ function handleRpcRequest(method, data) {
         var repSheet = getOrCreateSheet(ss, 'Repairs');
         var repData = getSheetDataAsObjects(ss, 'Repairs');
         var ticketId = 'REP-' + (1000 + repData.length + 1);
-        var nowStr = new Date().toLocaleString();
+        var nowStr = formatUSDateTime_(data.startTime ? new Date(data.startTime) : new Date());
         repSheet.appendRow([
           ticketId,
           data.customerName || data.customername || 'Unknown',
@@ -208,6 +218,8 @@ function handleRpcRequest(method, data) {
           data.fee || 0,
           data.total || data.price || 0,
           nowStr,
+          nowStr,
+          '',
           data.remark || ''
         ]);
         result = { status: 'success', id: ticketId };
@@ -218,7 +230,7 @@ function handleRpcRequest(method, data) {
         var salesSheet = getOrCreateSheet(ss, 'Sales');
         var salesData = getSheetDataAsObjects(ss, 'Sales');
         var voucherNo = 'V-' + (1000 + salesData.length + 1);
-        var nowStr = new Date().toLocaleString();
+        var nowStr = formatUSDateTime_(new Date());
         var items = data.items || [data];
 
         items.forEach(function(item) {
@@ -245,10 +257,43 @@ function handleRpcRequest(method, data) {
         result = { status: 'success', voucherNo: voucherNo };
         break;
 
+
+      case 'savePurchase':
+        var purSheet = getOrCreateSheet(ss, 'Purchases');
+        var purData = getSheetDataAsObjects(ss, 'Purchases');
+        var purchaseId = data.invoiceNo || ('PUR-' + (1000 + purData.length + 1));
+        var qty = Number(data.quantity || 0);
+        var unitCost = Number(data.unitCost || data.unitcost || 0);
+        var total = qty * unitCost;
+        var paid = Number(data.paidAmount || data.paid || 0);
+        var balance = Math.max(0, total - paid);
+        purSheet.appendRow([
+          formatUSDateTime_(new Date()), purchaseId, data.productId || '', data.productName || '',
+          data.supplier || '', qty, unitCost, total, paid, balance, data.remark || ''
+        ]);
+
+        var stockSheet = getOrCreateSheet(ss, 'Inventory');
+        var stockRows = stockSheet.getDataRange().getValues();
+        for (var pi = 1; pi < stockRows.length; pi++) {
+          if (String(stockRows[pi][0]) === String(data.productId)) {
+            var oldStock = Number(stockRows[pi][6] || 0);
+            var oldCost = Number(stockRows[pi][4] || 0);
+            stockSheet.getRange(pi + 1, 7).setValue(oldStock + qty);
+            if (data.costMode === 'new') {
+              stockSheet.getRange(pi + 1, 5).setValue(unitCost);
+            } else if (data.costMode === 'average' && oldStock + qty > 0) {
+              stockSheet.getRange(pi + 1, 5).setValue(((oldCost * oldStock) + (unitCost * qty)) / (oldStock + qty));
+            }
+            break;
+          }
+        }
+        result = { status: 'success', id: purchaseId };
+        break;
+
       case 'saveExpense':
         var expSheet = getOrCreateSheet(ss, 'Expenses');
         expSheet.appendRow([
-          new Date().toLocaleDateString(),
+          formatUSDate_(new Date()),
           data.description || '',
           data.category || 'General',
           Number(data.amount || 0),
@@ -286,9 +331,10 @@ function handleRpcRequest(method, data) {
 function setupDatabase() {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var sheets = [
-    { name: 'Inventory', headers: ['ID', 'Type', 'Brand', 'Model', 'Cost Price', 'Selling Price', 'Stock', 'Status', 'IMEI', 'Grade', 'Specification'] },
+    { name: 'Inventory', headers: ['ID', 'Type', 'Brand', 'Model', 'Cost Price', 'Selling Price', 'Stock', 'Status', 'IMEI', 'Grade', 'Accessory Type', 'Specification'] },
     { name: 'Sales', headers: ['Timestamp', 'Voucher No', 'ProductID', 'Type', 'Price', 'Customer', 'Phone', 'IMEI', 'Warranty', 'Payment Method', 'Channel', 'Specification', 'Remark', 'Cost Price', 'Profit'] },
-    { name: 'Repairs', headers: ['Ticket ID', 'Customer Name', 'Phone', 'Device', 'Issue', 'IMEI/SN', 'Initial Condition', 'Status', 'Fee', 'Total', 'Created At', 'Remark'] },
+    { name: 'Repairs', headers: ['Ticket ID', 'Customer Name', 'Phone', 'Device', 'Issue', 'IMEI/SN', 'Initial Condition', 'Status', 'Fee', 'Total', 'Created At', 'Start Time', 'Finish Time', 'Remark'] },
+    { name: 'Purchases', headers: ['Timestamp', 'Purchase ID', 'Product ID', 'Product Name', 'Supplier', 'Quantity', 'Unit Cost', 'Total', 'Paid', 'Balance', 'Remark'] },
     { name: 'Expenses', headers: ['Date', 'Description', 'Category', 'Amount', 'Noted By'] },
     { name: 'Staff', headers: ['Name', 'Email', 'PIN', 'Role', 'Status'] },
     { name: 'Settings', headers: ['Key', 'Value'] }
@@ -299,8 +345,8 @@ function setupDatabase() {
     if (!sheet) {
       sheet = ss.insertSheet(s.name);
       sheet.appendRow(s.headers);
-      sheet.getRange(1, 1, 1, s.headers.length).setFontWeight('bold').setBackground('#1a237e').setFontColor('#ffffff');
     }
+    ensureHeaders_(sheet, s.headers);
   });
 
   var staffSheet = ss.getSheetByName('Staff');
@@ -318,14 +364,42 @@ function setupDatabase() {
   return 'KSM POS Database Sheets Created Successfully!';
 }
 
+
+function formatUSDateTime_(date) {
+  return Utilities.formatDate(date, Session.getScriptTimeZone() || 'Asia/Yangon', 'MM/dd/yyyy hh:mm:ss a');
+}
+
+function formatUSDate_(date) {
+  return Utilities.formatDate(date, Session.getScriptTimeZone() || 'Asia/Yangon', 'MM/dd/yyyy');
+}
+
+function ensureHeaders_(sheet, headers) {
+  if (!sheet) return;
+  var currentLastColumn = Math.max(sheet.getLastColumn(), 1);
+  var existing = sheet.getRange(1, 1, 1, currentLastColumn).getValues()[0].map(function(v) { return String(v || '').trim(); });
+
+  // Non-destructive upgrade from earlier KSM POS sheet layouts.
+  if (sheet.getName() === 'Inventory' && existing.indexOf('Accessory Type') === -1 && existing.indexOf('Specification') === 10) {
+    sheet.insertColumnBefore(11);
+  }
+  if (sheet.getName() === 'Repairs' && existing.indexOf('Start Time') === -1 && existing.indexOf('Remark') === 11) {
+    sheet.insertColumnsBefore(12, 2);
+  }
+
+  sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
+  sheet.getRange(1, 1, 1, headers.length).setFontWeight('bold').setBackground('#1a237e').setFontColor('#ffffff');
+}
+
+
 function getOrCreateSheet(ss, sheetName) {
   var sheet = ss.getSheetByName(sheetName);
   if (!sheet) {
     sheet = ss.insertSheet(sheetName);
     var headersMap = {
-      'Inventory': ['ID', 'Type', 'Brand', 'Model', 'Cost Price', 'Selling Price', 'Stock', 'Status', 'IMEI', 'Grade', 'Specification'],
+      'Inventory': ['ID', 'Type', 'Brand', 'Model', 'Cost Price', 'Selling Price', 'Stock', 'Status', 'IMEI', 'Grade', 'Accessory Type', 'Specification'],
       'Sales': ['Timestamp', 'Voucher No', 'ProductID', 'Type', 'Price', 'Customer', 'Phone', 'IMEI', 'Warranty', 'Payment Method', 'Channel', 'Specification', 'Remark', 'Cost Price', 'Profit'],
-      'Repairs': ['Ticket ID', 'Customer Name', 'Phone', 'Device', 'Issue', 'IMEI/SN', 'Initial Condition', 'Status', 'Fee', 'Total', 'Created At', 'Remark'],
+      'Repairs': ['Ticket ID', 'Customer Name', 'Phone', 'Device', 'Issue', 'IMEI/SN', 'Initial Condition', 'Status', 'Fee', 'Total', 'Created At', 'Start Time', 'Finish Time', 'Remark'],
+      'Purchases': ['Timestamp', 'Purchase ID', 'Product ID', 'Product Name', 'Supplier', 'Quantity', 'Unit Cost', 'Total', 'Paid', 'Balance', 'Remark'],
       'Expenses': ['Date', 'Description', 'Category', 'Amount', 'Noted By'],
       'Staff': ['Name', 'Email', 'PIN', 'Role', 'Status'],
       'Settings': ['Key', 'Value']
@@ -336,6 +410,16 @@ function getOrCreateSheet(ss, sheetName) {
       sheet.getRange(1, 1, 1, headers.length).setFontWeight('bold').setBackground('#1a237e').setFontColor('#ffffff');
     } catch(e) {}
   }
+  var headersMapAlways = {
+    'Inventory': ['ID', 'Type', 'Brand', 'Model', 'Cost Price', 'Selling Price', 'Stock', 'Status', 'IMEI', 'Grade', 'Accessory Type', 'Specification'],
+    'Sales': ['Timestamp', 'Voucher No', 'ProductID', 'Type', 'Price', 'Customer', 'Phone', 'IMEI', 'Warranty', 'Payment Method', 'Channel', 'Specification', 'Remark', 'Cost Price', 'Profit'],
+    'Repairs': ['Ticket ID', 'Customer Name', 'Phone', 'Device', 'Issue', 'IMEI/SN', 'Initial Condition', 'Status', 'Fee', 'Total', 'Created At', 'Start Time', 'Finish Time', 'Remark'],
+    'Purchases': ['Timestamp', 'Purchase ID', 'Product ID', 'Product Name', 'Supplier', 'Quantity', 'Unit Cost', 'Total', 'Paid', 'Balance', 'Remark'],
+      'Expenses': ['Date', 'Description', 'Category', 'Amount', 'Noted By'],
+    'Staff': ['Name', 'Email', 'PIN', 'Role', 'Status'],
+    'Settings': ['Key', 'Value']
+  };
+  if (headersMapAlways[sheetName]) ensureHeaders_(sheet, headersMapAlways[sheetName]);
   return sheet;
 }
 

@@ -1,3 +1,4 @@
+import { formatUSDateTime } from '../utils/dateTime';
 import React, { useState, useMemo, useRef } from 'react';
 import { 
   ShoppingCart, 
@@ -396,7 +397,7 @@ export const PosView: React.FC<PosViewProps> = ({
                           <div className="text-xs text-slate-500 dark:text-slate-400 flex flex-wrap gap-2">
                             <span>Customer: <strong className="text-slate-700 dark:text-slate-200">{sale.customer}</strong></span>
                             {sale.phone && <span>• {sale.phone}</span>}
-                            <span>• {sale.timestamp}</span>
+                            <span>• {formatUSDateTime(sale.timestamp)}</span>
                           </div>
                           {sale.remark && (
                             <div className="text-[10px] text-amber-600 dark:text-amber-400 font-semibold italic">
