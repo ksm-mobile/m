@@ -48,3 +48,6 @@ This edition includes the official KSM logo, branded loading screen, browser fav
 The full backend is included in `Google-Apps-Script/Code.gs` and `Google-Apps-Script/Index.html`.
 All saved/displayed timestamps use US English format: `MM/DD/YYYY hh:mm:ss AM/PM`.
 Run `setupDatabase()` once after replacing Code.gs to add/upgrade `Accessory Type`, `Start Time`, and `Finish Time` columns.
+
+## v14 JSON database
+This build uses a fast two-column Google Sheet named `separate JSON sheets (Inventory, Sale, Repair, Purchase, Expense, Staff, Settings)` (`ID`, `Record`). Each voucher is stored as one complete JSON record instead of one row per sold item. Run `setupDatabase()` after replacing Apps Script `Code.gs`; legacy sheets are migrated automatically and retained as backup.

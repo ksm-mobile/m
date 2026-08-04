@@ -1,586 +1,569 @@
-export const GAS_CODE_GS = `/**
- * KSM POS & Mobile Repair Studio - Google Apps Script Backend (Code.gs)
- * Instructions:
- * 1. Open Google Sheets -> Extensions -> Apps Script
- * 2. Replace all code in Code.gs with this script.
- * 3. Run setupDatabase() function once to initialize all Sheets & Headers.
- * 4. Click Deploy -> New deployment -> Select Web app -> Access: Anyone -> Deploy.
- * 5. Copy Web App URL and paste into Settings in KSM POS App.
+export const GAS_SCRIPT = String.raw`/**
+ * KSM POS JSON Database Backend v14
+ *
+ * Each data type has its OWN fast JSON sheet:
+ *   Inventory, Sale, Repair, Purchase, Expense, Staff, Settings
+ * Every sheet uses Column A = ID and Column B = Record (complete JSON object).
+ *
+ * Setup:
+ * 1. Google Sheets -> Extensions -> Apps Script.
+ * 2. Replace Code.gs with this file.
+ * 3. Run setupDatabase() once.
+ * 4. Deploy -> Manage deployments -> Edit -> New version -> Deploy.
  */
 
+var DB_HEADERS = ['ID', 'Record'];
+var ENTITY_SHEETS = {
+  Inventory: 'Inventory',
+  Sale: 'Sale',
+  Repair: 'Repair',
+  Purchase: 'Purchase',
+  Expense: 'Expense',
+  Staff: 'Staff',
+  Setting: 'Settings'
+};
+var TERMINAL_REPAIR_STATUSES = ['Done', 'Delivered', 'Reject'];
+
 function doGet(e) {
-  if (e && e.parameter && e.parameter.method) {
-    return handleRpcRequest(e.parameter.method, JSON.parse(e.parameter.data || '{}'));
+  try {
+    if (e && e.parameter && e.parameter.method) {
+      return jsonOutput_(dispatch_(e.parameter.method, safeJsonParse_(e.parameter.data || '{}', {})));
+    }
+    return HtmlService.createHtmlOutput('<h1>KSM POS JSON API is Active</h1><p>Separate JSON sheets: Inventory, Sale, Repair, Purchase, Expense, Staff, Settings</p>')
+      .setTitle('KSM POS JSON API')
+      .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
+  } catch (err) {
+    return jsonOutput_({ status: 'error', message: String(err) });
   }
-  return HtmlService.createHtmlOutput('<h1>KSM POS Google Apps Script Web App API is Active!</h1><p>Use this URL in KSM POS Settings.</p>')
-    .setTitle('KSM POS Studio Web API')
-    .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
 }
 
 function doPost(e) {
   try {
-    var contents = JSON.parse(e.postData.contents);
-    var method = contents.method;
-    var data = contents.data;
-    return handleRpcRequest(method, data);
+    var body = safeJsonParse_(e && e.postData ? e.postData.contents : '{}', {});
+    return jsonOutput_(dispatch_(body.method, body.data || {}));
   } catch (err) {
-    return ContentService.createTextOutput(JSON.stringify({ status: 'error', message: err.toString() }))
-      .setMimeType(ContentService.MimeType.JSON);
+    return jsonOutput_({ status: 'error', message: String(err) });
   }
 }
 
-function handleRpcRequest(method, data) {
-  var ss = SpreadsheetApp.getActiveSpreadsheet();
-  var result = {};
+function dispatch_(method, data) {
+  var lock = LockService.getScriptLock();
+  var writeMethods = ['saveInventory','addItem','deleteItem','saveRepair','updateRepairStatus','recordSale','recordMultipleSales','savePurchase','saveExpense','saveSettings','saveStaffMember','deleteStaffMember','setupDatabase','initializeSheets'];
+  var needsLock = writeMethods.indexOf(method) !== -1;
+  if (needsLock) lock.waitLock(30000);
 
   try {
     switch (method) {
-      case 'getInventoryData':
-        result = getSheetDataAsObjects(ss, 'Inventory');
-        break;
-
-      case 'getRepairData':
-        result = getSheetDataAsObjects(ss, 'Repairs');
-        break;
-
-      case 'getExpensesData':
-        result = getSheetDataAsObjects(ss, 'Expenses');
-        break;
-
-      case 'getPurchaseData':
-      case 'getPurchases':
-      case 'getPurchasesData':
-        result = getSheetDataAsObjects(ss, 'Purchases');
-        break;
-
-      case 'getSalesHistory':
-        result = getSheetDataAsObjects(ss, 'Sales');
-        break;
-
-      case 'getStaffMembers':
-        result = getSheetDataAsObjects(ss, 'Staff');
-        break;
-
-      case 'getSettings':
-        var settingsList = getSheetDataAsObjects(ss, 'Settings');
-        var settingsObj = {};
-        settingsList.forEach(function(item) {
-          if (item.Key || item.key) settingsObj[item.Key || item.key] = item.Value || item.value;
-        });
-        result = settingsObj;
-        break;
-
-      case 'addItem':
-      case 'saveInventory':
-        var invSheet = getOrCreateSheet(ss, 'Inventory');
-        var invData = getSheetDataAsObjects(ss, 'Inventory');
-        var nextId = data.id || ('PRD-' + (1000 + invData.length + 1));
-        invSheet.appendRow([
-          nextId,
-          data.type || 'Phone',
-          data.brand || '',
-          data.model || '',
-          data.costPrice || data.costprice || 0,
-          data.price || data.sellingprice || 0,
-          data.stock || 1,
-          data.status || 'Active',
-          data.imei || '-',
-          data.grade || 'New',
-          data.accessoryType || data.accessorytype || '',
-          data.specification || '-'
-        ]);
-        result = { status: 'success', id: nextId };
-        break;
-
-      case 'deleteItem':
-        var invSheetDel = getOrCreateSheet(ss, 'Inventory');
-        if (invSheetDel) {
-          var rows = invSheetDel.getDataRange().getValues();
-          for (var i = rows.length - 1; i >= 1; i--) {
-            if (String(rows[i][0]) === String(data.id || data)) {
-              invSheetDel.deleteRow(i + 1);
-              break;
-            }
-          }
-        }
-        result = { status: 'success' };
-        break;
-
-      case 'updateRepairStatus':
-        var repSheetUp = getOrCreateSheet(ss, 'Repairs');
-        if (repSheetUp) {
-          var repRows = repSheetUp.getDataRange().getValues();
-          for (var r = 1; r < repRows.length; r++) {
-            if (String(repRows[r][0]) === String(data.id)) {
-              repSheetUp.getRange(r + 1, 8).setValue(data.status); // Status
-              var isFinished = data.status === 'Done' || data.status === 'Delivered' || data.status === 'Reject';
-              if (isFinished) {
-                // Always ensure a closed repair has an English finish timestamp.
-                var finishDate = parseFlexibleDate_(data.finishTime) || parseFlexibleDate_(repRows[r][12]) || new Date();
-                repSheetUp.getRange(r + 1, 13).setValue(formatUSDateTime_(finishDate));
-              } else {
-                // Reopening a job removes its finish timestamp.
-                repSheetUp.getRange(r + 1, 13).clearContent();
-              }
-              break;
-            }
-          }
-        }
-        result = { status: 'success' };
-        break;
-
-      case 'getFinancialReport':
-        var salesRows = getSheetDataAsObjects(ss, 'Sales');
-        var expenseRows = getSheetDataAsObjects(ss, 'Expenses');
-        var salesTotal = salesRows.reduce(function(sum, row) { return sum + Number(row.price || 0); }, 0);
-        var profitTotal = salesRows.reduce(function(sum, row) { return sum + Number(row.profit || 0); }, 0);
-        var expenseTotal = expenseRows.reduce(function(sum, row) { return sum + Number(row.amount || 0); }, 0);
-        result = { sales: salesTotal, expenses: expenseTotal, profit: profitTotal - expenseTotal };
-        break;
-
-      case 'getExportData':
-        var exportName = (data && data.name) || 'All';
-        if (exportName === 'All' || exportName === 'All Sheets (Full Archive)') {
-          result = [];
-          ['Inventory', 'Sales', 'Repairs', 'Expenses', 'Staff', 'Settings'].forEach(function(name) {
-            getSheetDataAsObjects(ss, name).forEach(function(row) {
-              row.sheet = name;
-              result.push(row);
-            });
-          });
-        } else {
-          result = getSheetDataAsObjects(ss, exportName);
-        }
-        break;
-
-      case 'verifyStaffPIN':
-        var login = String((data && data.email) || '').toLowerCase().trim();
-        var pin = String((data && data.pin) || '');
-        var members = getSheetDataAsObjects(ss, 'Staff');
-        var matched = null;
-        members.forEach(function(member) {
-          var memberName = String(member.name || '').toLowerCase();
-          var memberEmail = String(member.email || '').toLowerCase();
-          if (!matched && String(member.pin || '') === pin && (!login || memberName === login || memberEmail === login)) matched = member;
-        });
-        if (!matched && pin === '1234' && (!login || login.indexOf('admin') !== -1)) {
-          matched = { name: 'Admin', email: 'admin@ksm.local', role: 'Admin', status: 'Active' };
-        }
-        if (matched && String(matched.status || 'Active').toLowerCase() !== 'inactive') {
-          result = { status: 'success', user: { name: matched.name, email: matched.email, role: matched.role || 'Staff', status: matched.status || 'Active' } };
-        } else {
-          result = { status: 'error', message: 'Invalid user name/email or PIN.' };
-        }
-        break;
-
-      case 'saveStaffMember':
-        var staffSheet = getOrCreateSheet(ss, 'Staff');
-        var staffRows = staffSheet.getDataRange().getValues();
-        var staffEmail = String((data && data.email) || '').toLowerCase();
-        var updated = false;
-        for (var si = 1; si < staffRows.length; si++) {
-          if (String(staffRows[si][1]).toLowerCase() === staffEmail) {
-            staffSheet.getRange(si + 1, 1, 1, 5).setValues([[
-              data.name || staffRows[si][0], data.email || staffRows[si][1], data.pin || staffRows[si][2],
-              data.role || staffRows[si][3], data.status || staffRows[si][4]
-            ]]);
-            updated = true;
-            break;
-          }
-        }
-        if (!updated) staffSheet.appendRow([data.name || 'Staff', data.email || '', data.pin || '1111', data.role || 'Staff', data.status || 'Active']);
-        result = { status: 'success' };
-        break;
-
-      case 'deleteStaffMember':
-        var staffDeleteSheet = getOrCreateSheet(ss, 'Staff');
-        var deleteRows = staffDeleteSheet.getDataRange().getValues();
-        var deleteEmail = String((data && (data.email || data.id)) || data || '').toLowerCase();
-        for (var di = deleteRows.length - 1; di >= 1; di--) {
-          if (String(deleteRows[di][1]).toLowerCase() === deleteEmail) staffDeleteSheet.deleteRow(di + 1);
-        }
-        result = { status: 'success' };
-        break;
-
-      case 'testConnection':
       case 'ping':
-        result = { status: 'success', message: 'Google Apps Script Connection OK!' };
-        break;
-
-      case 'saveRepair':
-        var repSheet = getOrCreateSheet(ss, 'Repairs');
-        var repData = getSheetDataAsObjects(ss, 'Repairs');
-        var ticketId = 'REP-' + (1000 + repData.length + 1);
-        var nowStr = formatUSDateTime_(data.startTime ? new Date(data.startTime) : new Date());
-        repSheet.appendRow([
-          ticketId,
-          data.customerName || data.customername || 'Unknown',
-          data.phone || '-',
-          data.device || '-',
-          data.issue || '-',
-          data.imei || data.imeisn || '-',
-          data.condition || data.initialcondition || '-',
-          'Pending',
-          data.fee || 0,
-          data.total || data.price || 0,
-          nowStr,
-          nowStr,
-          '',
-          data.remark || ''
-        ]);
-        result = { status: 'success', id: ticketId };
-        break;
-
-      case 'recordSale':
-      case 'recordMultipleSales':
-        var salesSheet = getOrCreateSheet(ss, 'Sales');
-        var salesData = getSheetDataAsObjects(ss, 'Sales');
-        var voucherNo = 'V-' + (1000 + salesData.length + 1);
-        var nowStr = formatUSDateTime_(new Date());
-        var items = data.items || [data];
-
-        items.forEach(function(item) {
-          var price = Number(item.price) || 0;
-          var cost = Number(item.costPrice || item.costprice) || 0;
-          salesSheet.appendRow([
-            nowStr,
-            voucherNo,
-            item.productId || 'WALK-IN',
-            item.model || item.type || 'General',
-            price,
-            data.customer || 'Walk-in',
-            data.phone || '-',
-            item.imei || '-',
-            item.warranty || 'No Warranty',
-            data.paymentMethod || 'Cash',
-            data.channel || 'Walk-in',
-            item.specification || '-',
-            data.remark || item.remark || '',
-            cost,
-            price - cost
-          ]);
-        });
-        result = { status: 'success', voucherNo: voucherNo };
-        break;
-
-
-      case 'savePurchase':
-        var purSheet = getOrCreateSheet(ss, 'Purchases');
-        var purData = getSheetDataAsObjects(ss, 'Purchases');
-        var purchaseId = data.invoiceNo || ('PUR-' + (1000 + purData.length + 1));
-        var qty = Number(data.quantity || 0);
-        var unitCost = Number(data.unitCost || data.unitcost || 0);
-        var total = qty * unitCost;
-        var paid = Number(data.paidAmount || data.paid || 0);
-        var balance = Math.max(0, total - paid);
-        purSheet.appendRow([
-          formatUSDateTime_(new Date()), purchaseId, data.productId || '', data.productName || '',
-          data.supplier || '', qty, unitCost, total, paid, balance, data.remark || ''
-        ]);
-
-        var stockSheet = getOrCreateSheet(ss, 'Inventory');
-        var stockRows = stockSheet.getDataRange().getValues();
-        for (var pi = 1; pi < stockRows.length; pi++) {
-          if (String(stockRows[pi][0]) === String(data.productId)) {
-            var oldStock = Number(stockRows[pi][6] || 0);
-            var oldCost = Number(stockRows[pi][4] || 0);
-            stockSheet.getRange(pi + 1, 7).setValue(oldStock + qty);
-            if (data.costMode === 'new') {
-              stockSheet.getRange(pi + 1, 5).setValue(unitCost);
-            } else if (data.costMode === 'average' && oldStock + qty > 0) {
-              stockSheet.getRange(pi + 1, 5).setValue(((oldCost * oldStock) + (unitCost * qty)) / (oldStock + qty));
-            }
-            break;
-          }
-        }
-        result = { status: 'success', id: purchaseId };
-        break;
-
-      case 'saveExpense':
-        var expSheet = getOrCreateSheet(ss, 'Expenses');
-        expSheet.appendRow([
-          formatUSDate_(new Date()),
-          data.description || '',
-          data.category || 'General',
-          Number(data.amount || 0),
-          data.notedBy || 'Admin'
-        ]);
-        result = { status: 'success' };
-        break;
-
-      case 'saveSettings':
-        var setSheet = getOrCreateSheet(ss, 'Settings');
-        setSheet.clear();
-        setSheet.appendRow(['Key', 'Value']);
-        for (var key in data) {
-          setSheet.appendRow([key, data[key]]);
-        }
-        result = { status: 'success' };
-        break;
+      case 'testConnection':
+        return { status: 'success', message: 'KSM POS separate-sheet JSON database connected.', sheets: ENTITY_SHEETS };
 
       case 'setupDatabase':
       case 'initializeSheets':
-        result = setupDatabase();
-        break;
+        return setupDatabase();
+
+      case 'getInventoryData':
+        return listEntity_('Inventory');
+      case 'getRepairData':
+        return listEntity_('Repair');
+      case 'getExpensesData':
+        return listEntity_('Expense');
+      case 'getPurchaseData':
+      case 'getPurchases':
+      case 'getPurchasesData':
+        return listEntity_('Purchase');
+      case 'getSalesHistory':
+        return flattenSales_(listEntity_('Sale'));
+      case 'getStaffMembers':
+        return listEntity_('Staff');
+      case 'getSettings':
+        return getSettingsObject_();
+
+      case 'saveInventory':
+      case 'addItem':
+        return saveInventory_(data);
+      case 'deleteItem':
+        return deleteRecord_(String((data && data.id) || data || ''));
+
+      case 'saveRepair':
+        return saveRepair_(data);
+      case 'updateRepairStatus':
+        return updateRepairStatus_(data);
+
+      case 'recordSale':
+      case 'recordMultipleSales':
+        return recordSale_(data);
+
+      case 'savePurchase':
+        return savePurchase_(data);
+      case 'saveExpense':
+        return saveExpense_(data);
+
+      case 'getFinancialReport':
+        return getFinancialReport_();
+      case 'getExportData':
+        return getExportData_(data);
+
+      case 'verifyStaffPIN':
+        return verifyStaffPIN_(data);
+      case 'saveStaffMember':
+        return saveStaff_(data);
+      case 'deleteStaffMember':
+        return deleteStaff_(data);
+      case 'saveSettings':
+        return saveSettings_(data);
 
       default:
-        result = { status: 'success', message: 'OK' };
+        return { status: 'error', message: 'Unknown method: ' + method };
     }
-  } catch (e) {
-    result = { status: 'error', message: e.toString() };
+  } catch (err) {
+    return { status: 'error', message: String(err && err.message ? err.message : err) };
+  } finally {
+    if (needsLock) lock.releaseLock();
   }
-
-  return ContentService.createTextOutput(JSON.stringify(result))
-    .setMimeType(ContentService.MimeType.JSON);
 }
 
 function setupDatabase() {
-  var ss = SpreadsheetApp.getActiveSpreadsheet();
-  var sheets = [
-    { name: 'Inventory', headers: ['ID', 'Type', 'Brand', 'Model', 'Cost Price', 'Selling Price', 'Stock', 'Status', 'IMEI', 'Grade', 'Accessory Type', 'Specification'] },
-    { name: 'Sales', headers: ['Timestamp', 'Voucher No', 'ProductID', 'Type', 'Price', 'Customer', 'Phone', 'IMEI', 'Warranty', 'Payment Method', 'Channel', 'Specification', 'Remark', 'Cost Price', 'Profit'] },
-    { name: 'Repairs', headers: ['Ticket ID', 'Customer Name', 'Phone', 'Device', 'Issue', 'IMEI/SN', 'Initial Condition', 'Status', 'Fee', 'Total', 'Created At', 'Start Time', 'Finish Time', 'Remark'] },
-    { name: 'Purchases', headers: ['Timestamp', 'Purchase ID', 'Product ID', 'Product Name', 'Supplier', 'Quantity', 'Unit Cost', 'Total', 'Paid', 'Balance', 'Remark'] },
-    { name: 'Expenses', headers: ['Date', 'Description', 'Category', 'Amount', 'Noted By'] },
-    { name: 'Staff', headers: ['Name', 'Email', 'PIN', 'Role', 'Status'] },
-    { name: 'Settings', headers: ['Key', 'Value'] }
-  ];
+  migrateLegacyDataToSeparateJsonSheets_();
+  Object.keys(ENTITY_SHEETS).forEach(function(entity) { getEntitySheet_(entity); });
 
-  sheets.forEach(function(s) {
-    var sheet = ss.getSheetByName(s.name);
-    if (!sheet) {
-      sheet = ss.insertSheet(s.name);
-      sheet.appendRow(s.headers);
-    }
-    ensureHeaders_(sheet, s.headers);
+  if (listEntity_('Staff').length === 0) {
+    appendRecord_('Staff-ADMIN', { entity: 'Staff', name: 'Admin', email: 'admin@ksm.local', pin: '1234', role: 'Admin', status: 'Active' });
+    appendRecord_('Staff-STAFF', { entity: 'Staff', name: 'Staff', email: 'staff@ksm.local', pin: '1111', role: 'Staff', status: 'Active' });
+  }
+  if (listEntity_('Setting').length === 0) {
+    appendRecord_('Setting-store_name', { entity: 'Setting', key: 'store_name', value: 'KSM POS' });
+    appendRecord_('Setting-store_tagline', { entity: 'Setting', key: 'store_tagline', value: 'POS & SERVICES STUDIO' });
+    appendRecord_('Setting-store_logo', { entity: 'Setting', key: 'store_logo', value: 'KSM' });
+  }
+
+  return { status: 'success', message: 'Separate JSON sheets are ready.', sheets: ENTITY_SHEETS };
+}
+
+function saveInventory_(data) {
+  var id = String(data.id || data.productid || uniqueId_('PRD'));
+  var existing = getRecordById_(id) || {};
+  var record = merge_(existing, {
+    entity: 'Inventory', id: id, productid: id,
+    type: data.type || existing.type || 'Phone',
+    brand: data.brand || existing.brand || '',
+    model: data.model || existing.model || '',
+    costprice: number_(data.costPrice !== undefined ? data.costPrice : data.costprice, existing.costprice || 0),
+    sellingprice: number_(data.price !== undefined ? data.price : data.sellingprice, existing.sellingprice || 0),
+    price: number_(data.price !== undefined ? data.price : data.sellingprice, existing.price || 0),
+    stock: number_(data.stock, existing.stock || 0),
+    status: data.status || existing.status || 'Active',
+    imei: data.imei || existing.imei || '-',
+    barcode: data.barcode || existing.barcode || '-',
+    grade: data.grade || existing.grade || 'New',
+    accessorytype: data.accessoryType || data.accessorytype || existing.accessorytype || '',
+    specification: data.specification || existing.specification || '-',
+    imageid: data.imageId || data.imageid || existing.imageid || '',
+    updatedat: nowUS_()
   });
-
-  var staffSheet = ss.getSheetByName('Staff');
-  if (staffSheet && staffSheet.getLastRow() < 2) {
-    staffSheet.appendRow(['Admin', 'admin@ksm.local', '1234', 'Admin', 'Active']);
-    staffSheet.appendRow(['Staff', 'staff@ksm.local', '1111', 'Staff', 'Active']);
-  }
-  var settingsSheet = ss.getSheetByName('Settings');
-  if (settingsSheet && settingsSheet.getLastRow() < 2) {
-    settingsSheet.appendRow(['store_name', 'KSM POS']);
-    settingsSheet.appendRow(['store_tagline', 'POS & SERVICES STUDIO']);
-    settingsSheet.appendRow(['store_logo', 'KSM']);
-  }
-
-  normalizeAllDateTimes_();
-  return 'KSM POS Database Sheets Created and all timestamps converted to English successfully!';
+  upsertRecord_(id, record);
+  return { status: 'success', id: id };
 }
 
-
-function toEnglishDigits_(value) {
-  var map = {'၀':'0','၁':'1','၂':'2','၃':'3','၄':'4','၅':'5','၆':'6','၇':'7','၈':'8','၉':'9'};
-  return String(value === null || value === undefined ? '' : value).replace(/[၀-၉]/g, function(d) { return map[d] || d; });
-}
-
-function parseFlexibleDate_(value) {
-  if (value instanceof Date && !isNaN(value.getTime())) return value;
-  if (value === null || value === undefined || value === '') return null;
-  var original = String(value);
-  var raw = toEnglishDigits_(original).trim();
-  var m = raw.match(/^(\d{1,2})[\/-](\d{1,2})[\/-](\d{4})(?:\s+(\d{1,2}):(\d{2})(?::(\d{2}))?\s*(AM|PM)?)?$/i);
-  if (m) {
-    var first = Number(m[1]);
-    var second = Number(m[2]);
-    var year = Number(m[3]);
-    var hour = Number(m[4] || 0);
-    var minute = Number(m[5] || 0);
-    var secondValue = Number(m[6] || 0);
-    var meridiem = String(m[7] || '').toUpperCase();
-    var hadMyanmarDigits = /[၀-၉]/.test(original);
-    var month = hadMyanmarDigits ? second : first;
-    var day = hadMyanmarDigits ? first : second;
-    if (first > 12) { day = first; month = second; }
-    if (second > 12) { month = first; day = second; }
-    if (meridiem === 'PM' && hour < 12) hour += 12;
-    if (meridiem === 'AM' && hour === 12) hour = 0;
-    var parsed = new Date(year, month - 1, day, hour, minute, secondValue);
-    return isNaN(parsed.getTime()) ? null : parsed;
-  }
-  var fallback = new Date(raw);
-  return isNaN(fallback.getTime()) ? null : fallback;
-}
-
-function formatUSDateTime_(date) {
-  var parsed = parseFlexibleDate_(date) || new Date();
-  return Utilities.formatDate(parsed, Session.getScriptTimeZone() || 'Asia/Yangon', 'MM/dd/yyyy hh:mm:ss a');
-}
-
-function formatUSDate_(date) {
-  var parsed = parseFlexibleDate_(date) || new Date();
-  return Utilities.formatDate(parsed, Session.getScriptTimeZone() || 'Asia/Yangon', 'MM/dd/yyyy');
-}
-
-function normalizeAllDateTimes_() {
-  var ss = SpreadsheetApp.getActiveSpreadsheet();
-  var configs = {
-    'Sales': [1],
-    'Purchases': [1],
-    'Expenses': [1],
-    'Repairs': [11, 12, 13]
+function saveRepair_(data) {
+  var id = uniqueId_('REP');
+  var start = formatUSDateTime_(data.startTime || new Date());
+  var record = {
+    entity: 'Repair', ticketid: id, id: id,
+    customername: data.customerName || data.customername || 'Unknown',
+    phone: data.phone || '-', device: data.device || '-', issue: data.issue || '-',
+    imeisn: data.imei || data.imeisn || '-', initialcondition: data.condition || data.initialcondition || '-',
+    status: 'Pending', fee: number_(data.fee, 0), total: number_(data.total || data.price, 0),
+    createdat: start, starttime: start, finishtime: '', remark: data.remark || ''
   };
-  Object.keys(configs).forEach(function(sheetName) {
-    var sheet = ss.getSheetByName(sheetName);
-    if (!sheet || sheet.getLastRow() < 2) return;
-    var lastRow = sheet.getLastRow();
-    configs[sheetName].forEach(function(column) {
-      var range = sheet.getRange(2, column, lastRow - 1, 1);
-      var values = range.getValues();
-      for (var i = 0; i < values.length; i++) {
-        if (values[i][0] === '' || values[i][0] === null) continue;
-        var parsed = parseFlexibleDate_(values[i][0]);
-        if (parsed) values[i][0] = sheetName === 'Expenses' ? formatUSDate_(parsed) : formatUSDateTime_(parsed);
-        else values[i][0] = toEnglishDigits_(values[i][0]);
+  appendRecord_(id, record);
+  return { status: 'success', id: id };
+}
+
+function updateRepairStatus_(data) {
+  var id = String(data.id || '');
+  var record = getRecordById_(id);
+  if (!record) throw new Error('Repair job not found: ' + id);
+  record.status = data.status || record.status;
+  if (TERMINAL_REPAIR_STATUSES.indexOf(record.status) !== -1) {
+    record.finishtime = formatUSDateTime_(data.finishTime || new Date());
+  } else {
+    record.finishtime = '';
+  }
+  record.updatedat = nowUS_();
+  upsertRecord_(id, record);
+  return { status: 'success', id: id, finishTime: record.finishtime };
+}
+
+function recordSale_(data) {
+  var id = uniqueId_('Sale');
+  var voucherNo = 'V-' + Utilities.getUuid().replace(/-/g, '').slice(0, 6).toUpperCase();
+  var items = Array.isArray(data.items) ? data.items : [data];
+  var timestamp = nowUS_();
+  var normalizedItems = items.map(function(item) {
+    var price = number_(item.price, 0);
+    var cost = number_(item.costPrice !== undefined ? item.costPrice : item.costprice, 0);
+    return {
+      productId: item.productId || item.productid || 'WALK-IN', model: item.model || item.type || 'General',
+      price: price, costPrice: cost, profit: price - cost,
+      specification: item.specification || '-', imei: item.imei || '-', warranty: item.warranty || 'No Warranty',
+      remark: item.remark || '', qty: number_(item.qty || item.quantity, 1)
+    };
+  });
+  var total = normalizedItems.reduce(function(sum, item) { return sum + item.price * item.qty; }, 0);
+  var profit = normalizedItems.reduce(function(sum, item) { return sum + item.profit * item.qty; }, 0);
+  var sale = {
+    entity: 'Sale', id: id, timestamp: timestamp, voucherno: voucherNo,
+    customer: data.customer || 'Walk-in', phone: data.phone || '-', paymentmethod: data.paymentMethod || 'Cash',
+    channel: data.channel || 'Walk-in', remark: data.remark || '', items: normalizedItems,
+    total: total, profit: profit
+  };
+  appendRecord_(id, sale); // One sheet write for the complete voucher.
+  decreaseInventoryStock_(normalizedItems);
+  return { status: 'success', id: id, voucherNo: voucherNo };
+}
+
+function savePurchase_(data) {
+  var id = uniqueId_('Purchase');
+  var qty = number_(data.quantity, 0);
+  var unitCost = number_(data.unitCost !== undefined ? data.unitCost : data.unitcost, 0);
+  var total = qty * unitCost;
+  var paid = number_(data.paidAmount !== undefined ? data.paidAmount : data.paid, 0);
+  var record = {
+    entity: 'Purchase', id: id, purchaseid: id, purchaseno: id,
+    timestamp: nowUS_(), date: nowUS_(), invoiceno: data.invoiceNo || '',
+    productid: data.productId || '', productname: data.productName || '', supplier: data.supplier || '',
+    quantity: qty, unitcost: unitCost, total: total, paidamount: paid, paid: paid,
+    balance: Math.max(0, total - paid), paymentmethod: data.paymentMethod || 'Cash',
+    costmode: data.costMode || 'average', notedby: data.notedBy || 'Admin', remark: data.remark || ''
+  };
+  appendRecord_(id, record);
+  increaseInventoryStock_(record.productid, qty, unitCost, record.costmode);
+  return { status: 'success', id: id };
+}
+
+function saveExpense_(data) {
+  var id = uniqueId_('Expense');
+  appendRecord_(id, {
+    entity: 'Expense', id: id, date: nowUS_(), description: data.description || '',
+    category: data.category || 'General', amount: number_(data.amount, 0), notedby: data.notedBy || 'Admin'
+  });
+  return { status: 'success', id: id };
+}
+
+function flattenSales_(sales) {
+  var rows = [];
+  sales.forEach(function(sale) {
+    (sale.items || []).forEach(function(item) {
+      var qty = number_(item.qty, 1);
+      for (var i = 0; i < qty; i++) {
+        rows.push({
+          timestamp: sale.timestamp, voucherno: sale.voucherno, productid: item.productId,
+          type: item.model, price: number_(item.price, 0), customer: sale.customer, phone: sale.phone,
+          imei: i === 0 ? item.imei : '-', warranty: item.warranty,
+          paymentmethod: sale.paymentmethod, channel: sale.channel, specification: item.specification,
+          remark: [item.remark, sale.remark].filter(Boolean).join(' | '),
+          costprice: number_(item.costPrice, 0), profit: number_(item.profit, 0)
+        });
       }
-      range.setValues(values);
-      range.setNumberFormat('@');
     });
   });
+  return rows;
+}
 
-  // Close old repair rows that already have a terminal status but no finish time.
-  var repairs = ss.getSheetByName('Repairs');
-  if (repairs && repairs.getLastRow() >= 2) {
-    var rows = repairs.getRange(2, 1, repairs.getLastRow() - 1, Math.max(repairs.getLastColumn(), 14)).getValues();
-    for (var r = 0; r < rows.length; r++) {
-      var status = String(rows[r][7] || '');
-      if ((status === 'Done' || status === 'Delivered' || status === 'Reject') && !rows[r][12]) {
-        rows[r][12] = formatUSDateTime_(new Date());
-      }
+function getFinancialReport_() {
+  var sales = listEntity_('Sale');
+  var expenses = listEntity_('Expense');
+  var salesTotal = sales.reduce(function(sum, row) { return sum + number_(row.total, 0); }, 0);
+  var profitTotal = sales.reduce(function(sum, row) { return sum + number_(row.profit, 0); }, 0);
+  var expenseTotal = expenses.reduce(function(sum, row) { return sum + number_(row.amount, 0); }, 0);
+  return { sales: salesTotal, expenses: expenseTotal, profit: profitTotal - expenseTotal };
+}
+
+function saveSettings_(data) {
+  Object.keys(data || {}).forEach(function(key) {
+    upsertRecord_('Setting-' + key, { entity: 'Setting', key: key, value: data[key] });
+  });
+  return { status: 'success' };
+}
+
+function getSettingsObject_() {
+  var result = {};
+  listEntity_('Setting').forEach(function(row) { result[row.key] = row.value; });
+  return result;
+}
+
+function saveStaff_(data) {
+  var email = String(data.email || '').toLowerCase();
+  var current = listEntity_('Staff').filter(function(row) { return String(row.email || '').toLowerCase() === email; })[0];
+  var id = current ? current.id : uniqueId_('Staff');
+  upsertRecord_(id, { entity: 'Staff', id: id, name: data.name || 'Staff', email: data.email || '', pin: data.pin || '1111', role: data.role || 'Staff', status: data.status || 'Active' });
+  return { status: 'success', id: id };
+}
+
+function deleteStaff_(data) {
+  var needle = String((data && (data.email || data.id)) || data || '').toLowerCase();
+  listEntity_('Staff').forEach(function(row) {
+    if (String(row.email || '').toLowerCase() === needle || String(row.id || '').toLowerCase() === needle || String(row.name || '').toLowerCase() === needle) deleteRecord_(row.id);
+  });
+  return { status: 'success' };
+}
+
+function verifyStaffPIN_(data) {
+  var login = String((data && data.email) || '').toLowerCase().trim();
+  var pin = String((data && data.pin) || '');
+  var matched = null;
+  listEntity_('Staff').forEach(function(member) {
+    if (!matched && String(member.pin || '') === pin && (!login || String(member.name || '').toLowerCase() === login || String(member.email || '').toLowerCase() === login)) matched = member;
+  });
+  if (matched && String(matched.status || 'Active').toLowerCase() !== 'inactive') {
+    return { status: 'success', user: { name: matched.name, email: matched.email, role: matched.role || 'Staff', status: matched.status || 'Active' } };
+  }
+  return { status: 'error', message: 'Invalid user name/email or PIN.' };
+}
+
+function getExportData_(data) {
+  var name = (data && data.name) || 'All';
+  if (name === 'All' || name === 'All Sheets (Full Archive)') return listAllRecords_();
+  var entityMap = { Inventory: 'Inventory', Sales: 'Sale', Repairs: 'Repair', Expenses: 'Expense', Purchases: 'Purchase', Staff: 'Staff', Settings: 'Setting' };
+  return listEntity_(entityMap[name] || name);
+}
+
+function decreaseInventoryStock_(items) {
+  var grouped = {};
+  items.forEach(function(item) {
+    var id = String(item.productId || '');
+    if (id && id !== 'WALK-IN') grouped[id] = (grouped[id] || 0) + number_(item.qty, 1);
+  });
+  Object.keys(grouped).forEach(function(id) {
+    var item = getRecordById_(id);
+    if (!item) return;
+    item.stock = Math.max(0, number_(item.stock, 0) - grouped[id]);
+    item.updatedat = nowUS_();
+    upsertRecord_(id, item);
+  });
+}
+
+function increaseInventoryStock_(id, qty, unitCost, mode) {
+  var item = getRecordById_(String(id || ''));
+  if (!item) return;
+  var oldStock = number_(item.stock, 0);
+  var oldCost = number_(item.costprice, 0);
+  item.stock = oldStock + qty;
+  if (mode === 'new') item.costprice = unitCost;
+  else if (mode === 'average' && item.stock > 0) item.costprice = ((oldCost * oldStock) + (unitCost * qty)) / item.stock;
+  item.updatedat = nowUS_();
+  upsertRecord_(item.id, item);
+}
+
+// ---------- Separate JSON sheet helpers ----------
+function sheetNameForEntity_(entity) {
+  var name = ENTITY_SHEETS[entity];
+  if (!name) throw new Error('Unknown entity: ' + entity);
+  return name;
+}
+
+function styleJsonSheet_(sheet) {
+  sheet.setFrozenRows(1);
+  sheet.getRange(1, 1, 1, 2).setValues([DB_HEADERS]).setFontWeight('bold').setBackground('#1a237e').setFontColor('#ffffff');
+  sheet.setColumnWidth(1, 180);
+  sheet.setColumnWidth(2, 850);
+  sheet.getRange('A:B').setNumberFormat('@');
+}
+
+function getEntitySheet_(entity) {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var name = sheetNameForEntity_(entity);
+  var sheet = ss.getSheetByName(name);
+  if (!sheet) sheet = ss.insertSheet(name);
+  if (sheet.getLastRow() === 0 || sheet.getRange(1, 1, 1, 2).getDisplayValues()[0].join('|') !== 'ID|Record') {
+    if (sheet.getLastRow() > 0 && sheet.getDataRange().getDisplayValues().some(function(r){ return r.join('').trim() !== ''; })) {
+      throw new Error('Sheet "' + name + '" is not JSON format. Run setupDatabase() to migrate it safely.');
     }
-    repairs.getRange(2, 1, rows.length, rows[0].length).setValues(rows);
   }
-}
-
-function ensureHeaders_(sheet, headers) {
-  if (!sheet) return;
-  var currentLastColumn = Math.max(sheet.getLastColumn(), 1);
-  var existing = sheet.getRange(1, 1, 1, currentLastColumn).getValues()[0].map(function(v) { return String(v || '').trim(); });
-
-  // Non-destructive upgrade from earlier KSM POS sheet layouts.
-  if (sheet.getName() === 'Inventory' && existing.indexOf('Accessory Type') === -1 && existing.indexOf('Specification') === 10) {
-    sheet.insertColumnBefore(11);
-  }
-  if (sheet.getName() === 'Repairs' && existing.indexOf('Start Time') === -1 && existing.indexOf('Remark') === 11) {
-    sheet.insertColumnsBefore(12, 2);
-  }
-
-  sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
-  sheet.getRange(1, 1, 1, headers.length).setFontWeight('bold').setBackground('#1a237e').setFontColor('#ffffff');
-}
-
-
-function getOrCreateSheet(ss, sheetName) {
-  var sheet = ss.getSheetByName(sheetName);
-  if (!sheet) {
-    sheet = ss.insertSheet(sheetName);
-    var headersMap = {
-      'Inventory': ['ID', 'Type', 'Brand', 'Model', 'Cost Price', 'Selling Price', 'Stock', 'Status', 'IMEI', 'Grade', 'Accessory Type', 'Specification'],
-      'Sales': ['Timestamp', 'Voucher No', 'ProductID', 'Type', 'Price', 'Customer', 'Phone', 'IMEI', 'Warranty', 'Payment Method', 'Channel', 'Specification', 'Remark', 'Cost Price', 'Profit'],
-      'Repairs': ['Ticket ID', 'Customer Name', 'Phone', 'Device', 'Issue', 'IMEI/SN', 'Initial Condition', 'Status', 'Fee', 'Total', 'Created At', 'Start Time', 'Finish Time', 'Remark'],
-      'Purchases': ['Timestamp', 'Purchase ID', 'Product ID', 'Product Name', 'Supplier', 'Quantity', 'Unit Cost', 'Total', 'Paid', 'Balance', 'Remark'],
-      'Expenses': ['Date', 'Description', 'Category', 'Amount', 'Noted By'],
-      'Staff': ['Name', 'Email', 'PIN', 'Role', 'Status'],
-      'Settings': ['Key', 'Value']
-    };
-    var headers = headersMap[sheetName] || ['ID', 'Data'];
-    sheet.appendRow(headers);
-    try {
-      sheet.getRange(1, 1, 1, headers.length).setFontWeight('bold').setBackground('#1a237e').setFontColor('#ffffff');
-    } catch(e) {}
-  }
-  var headersMapAlways = {
-    'Inventory': ['ID', 'Type', 'Brand', 'Model', 'Cost Price', 'Selling Price', 'Stock', 'Status', 'IMEI', 'Grade', 'Accessory Type', 'Specification'],
-    'Sales': ['Timestamp', 'Voucher No', 'ProductID', 'Type', 'Price', 'Customer', 'Phone', 'IMEI', 'Warranty', 'Payment Method', 'Channel', 'Specification', 'Remark', 'Cost Price', 'Profit'],
-    'Repairs': ['Ticket ID', 'Customer Name', 'Phone', 'Device', 'Issue', 'IMEI/SN', 'Initial Condition', 'Status', 'Fee', 'Total', 'Created At', 'Start Time', 'Finish Time', 'Remark'],
-    'Purchases': ['Timestamp', 'Purchase ID', 'Product ID', 'Product Name', 'Supplier', 'Quantity', 'Unit Cost', 'Total', 'Paid', 'Balance', 'Remark'],
-      'Expenses': ['Date', 'Description', 'Category', 'Amount', 'Noted By'],
-    'Staff': ['Name', 'Email', 'PIN', 'Role', 'Status'],
-    'Settings': ['Key', 'Value']
-  };
-  if (headersMapAlways[sheetName]) ensureHeaders_(sheet, headersMapAlways[sheetName]);
+  styleJsonSheet_(sheet);
   return sheet;
 }
 
-function getSheetDataAsObjects(ss, sheetName) {
-  var sheet = getOrCreateSheet(ss, sheetName);
-  if (!sheet) return [];
-  var values = sheet.getDataRange().getValues();
-  if (values.length < 2) return [];
-  var headers = values[0];
-  var result = [];
-  for (var i = 1; i < values.length; i++) {
-    var row = values[i];
-    var obj = {};
-    for (var j = 0; j < headers.length; j++) {
-      var key = String(headers[j]).toLowerCase().replace(/[^a-z0-9]/g, '');
-      var cellValue = row[j];
-      if (key === 'timestamp' || key === 'createdat' || key === 'starttime' || key === 'finishtime') {
-        var parsedDateTime = parseFlexibleDate_(cellValue);
-        cellValue = parsedDateTime ? formatUSDateTime_(parsedDateTime) : toEnglishDigits_(cellValue);
-      } else if (key === 'date') {
-        var parsedDate = parseFlexibleDate_(cellValue);
-        cellValue = parsedDate ? formatUSDate_(parsedDate) : toEnglishDigits_(cellValue);
-      }
-      obj[key] = cellValue;
-    }
-    result.push(obj);
-  }
-  return result;
+function entityFromId_(id) {
+  id = String(id || '');
+  if (/^(PRD|ITEM)-/i.test(id)) return 'Inventory';
+  if (/^Sale-/i.test(id)) return 'Sale';
+  if (/^REP-/i.test(id)) return 'Repair';
+  if (/^Purchase-/i.test(id)) return 'Purchase';
+  if (/^Expense-/i.test(id)) return 'Expense';
+  if (/^Staff-/i.test(id)) return 'Staff';
+  if (/^Setting-/i.test(id)) return 'Setting';
+  return '';
 }
-`;
 
-export const GAS_INDEX_HTML = `<!DOCTYPE html>
-<html>
-  <head>
-    <base target="_top">
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>KSM POS Studio Web API</title>
-    <style>
-      body {
-        font-family: system-ui, -apple-system, sans-serif;
-        background-color: #0f172a;
-        color: #f8fafc;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        height: 100vh;
-        margin: 0;
-        text-align: center;
-      }
-      .card {
-        background: #1e293b;
-        padding: 2.5rem;
-        border-radius: 1rem;
-        border: 1px solid #334155;
-        max-width: 480px;
-        box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.3);
-      }
-      .badge {
-        background: #22c55e;
-        color: #052e16;
-        font-weight: bold;
-        padding: 0.25rem 0.75rem;
-        border-radius: 9999px;
-        font-size: 0.75rem;
-        text-transform: uppercase;
-        display: inline-block;
-        margin-bottom: 1rem;
-      }
-      h1 { font-size: 1.5rem; margin-bottom: 0.5rem; }
-      p { color: #94a3b8; font-size: 0.875rem; line-height: 1.5; }
-    </style>
-  </head>
-  <body>
-    <div class="card">
-      <div class="badge">API Active</div>
-      <h1>KSM POS Google Apps Script API</h1>
-      <p>This Web App serves as the Google Sheets backend database for KSM POS & Mobile Repair Studio.</p>
-    </div>
-  </body>
-</html>
+function appendRecord_(id, record) {
+  record = record || {};
+  record.id = record.id || id;
+  var entity = record.entity || entityFromId_(id);
+  if (!entity) throw new Error('Cannot determine sheet for record: ' + id);
+  getEntitySheet_(entity).appendRow([String(id), JSON.stringify(record)]);
+}
+
+function upsertRecord_(id, record) {
+  record = record || {};
+  record.id = record.id || id;
+  var entity = record.entity || entityFromId_(id);
+  if (!entity) throw new Error('Cannot determine sheet for record: ' + id);
+  var sheet = getEntitySheet_(entity);
+  var row = findRecordRowInSheet_(sheet, id);
+  var values = [[String(id), JSON.stringify(record)]];
+  if (row > 0) sheet.getRange(row, 1, 1, 2).setValues(values);
+  else sheet.getRange(sheet.getLastRow() + 1, 1, 1, 2).setValues(values);
+}
+
+function deleteRecord_(id) {
+  var located = locateRecord_(id);
+  if (located) located.sheet.deleteRow(located.row);
+  return { status: 'success', id: id };
+}
+
+function findRecordRowInSheet_(sheet, id) {
+  if (!id || sheet.getLastRow() < 2) return -1;
+  var found = sheet.getRange(2, 1, sheet.getLastRow() - 1, 1).createTextFinder(String(id)).matchEntireCell(true).findNext();
+  return found ? found.getRow() : -1;
+}
+
+function locateRecord_(id) {
+  if (!id) return null;
+  var preferred = entityFromId_(id);
+  var entities = Object.keys(ENTITY_SHEETS);
+  if (preferred) entities = [preferred].concat(entities.filter(function(e){ return e !== preferred; }));
+  for (var i = 0; i < entities.length; i++) {
+    var sheet = getEntitySheet_(entities[i]);
+    var row = findRecordRowInSheet_(sheet, id);
+    if (row > 0) return { entity: entities[i], sheet: sheet, row: row };
+  }
+  return null;
+}
+
+function getRecordById_(id) {
+  var located = locateRecord_(id);
+  if (!located) return null;
+  return safeJsonParse_(located.sheet.getRange(located.row, 2).getDisplayValue(), null);
+}
+
+function listEntity_(entity) {
+  var sheet = getEntitySheet_(entity);
+  if (sheet.getLastRow() < 2) return [];
+  return sheet.getRange(2, 1, sheet.getLastRow() - 1, 2).getDisplayValues().map(function(row) {
+    var record = safeJsonParse_(row[1], {});
+    record.id = record.id || row[0];
+    record.entity = record.entity || entity;
+    return record;
+  }).filter(function(record) { return record && Object.keys(record).length; });
+}
+
+function listAllRecords_() {
+  var all = [];
+  Object.keys(ENTITY_SHEETS).forEach(function(entity) { all = all.concat(listEntity_(entity)); });
+  return all;
+}
+
+// Migrates old column-based sheets and the v13 KSM_Data mixed sheet.
+// Existing source sheets are preserved with a _Legacy_ or _v13_Backup suffix.
+function migrateLegacyDataToSeparateJsonSheets_() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var stamp = Utilities.formatDate(new Date(), Session.getScriptTimeZone() || 'Asia/Yangon', 'yyyyMMdd_HHmmss');
+
+  // First migrate the v13 mixed JSON sheet, if present.
+  var mixed = ss.getSheetByName('KSM_Data');
+  var mixedRecords = [];
+  if (mixed && mixed.getLastRow() >= 2) {
+    mixedRecords = mixed.getRange(2, 1, mixed.getLastRow() - 1, 2).getDisplayValues().map(function(row) {
+      var rec = safeJsonParse_(row[1], {}); rec.id = rec.id || row[0]; return rec;
+    }).filter(function(rec){ return rec && rec.entity; });
+    mixed.setName('KSM_Data_v13_Backup_' + stamp);
+  }
+
+  var sources = {
+    Inventory: ['Inventory'],
+    Sale: ['Sale', 'Sales'],
+    Repair: ['Repair', 'Repairs'],
+    Purchase: ['Purchase', 'Purchases'],
+    Expense: ['Expense', 'Expenses'],
+    Staff: ['Staff'],
+    Setting: ['Settings', 'Setting']
+  };
+  var legacyByEntity = {};
+
+  Object.keys(sources).forEach(function(entity) {
+    legacyByEntity[entity] = [];
+    sources[entity].forEach(function(name) {
+      var sheet = ss.getSheetByName(name);
+      if (!sheet || sheet.getLastRow() === 0) return;
+      var head = sheet.getRange(1, 1, 1, Math.min(2, sheet.getLastColumn())).getDisplayValues()[0];
+      if (head[0] === 'ID' && head[1] === 'Record') return;
+      legacyByEntity[entity] = legacyByEntity[entity].concat(legacyObjects_(sheet));
+      sheet.setName(name + '_Legacy_' + stamp);
+    });
+  });
+
+  // Create clean target sheets before writing records.
+  Object.keys(ENTITY_SHEETS).forEach(function(entity) {
+    var name = ENTITY_SHEETS[entity];
+    var sheet = ss.getSheetByName(name);
+    if (!sheet) sheet = ss.insertSheet(name);
+    styleJsonSheet_(sheet);
+  });
+
+  mixedRecords.forEach(function(rec) { appendRecord_(rec.id || uniqueId_(rec.entity), rec); });
+
+  Object.keys(legacyByEntity).forEach(function(entity) {
+    var rows = legacyByEntity[entity];
+    if (!rows.length) return;
+    if (entity === 'Sale') {
+      var groups = {};
+      rows.forEach(function(row) {
+        var voucher = row.voucherno || row.invoiceno || uniqueId_('V');
+        if (!groups[voucher]) groups[voucher] = { entity:'Sale', id:uniqueId_('Sale'), timestamp:formatUSDateTime_(row.timestamp || row.date), voucherno:voucher, customer:row.customer || 'Walk-in', phone:row.phone || '-', paymentmethod:row.paymentmethod || 'Cash', channel:row.channel || 'Walk-in', remark:row.remark || '', items:[], total:0, profit:0 };
+        var item = { productId:row.productid || 'WALK-IN', model:row.type || row.model || 'General', price:number_(row.price,0), costPrice:number_(row.costprice,0), profit:number_(row.profit,0), specification:row.specification || '-', imei:row.imei || '-', warranty:row.warranty || 'No Warranty', remark:row.remark || '', qty:number_(row.qty || row.quantity,1) };
+        groups[voucher].items.push(item); groups[voucher].total += item.price * item.qty; groups[voucher].profit += item.profit * item.qty;
+      });
+      Object.keys(groups).forEach(function(v){ appendRecord_(groups[v].id, groups[v]); });
+    } else {
+      rows.forEach(function(obj) {
+        var id = obj.id || obj.productid || obj.ticketid || obj.purchaseid || uniqueId_(entity);
+        obj.entity = entity; obj.id = id; appendRecord_(id, obj);
+      });
+    }
+  });
+}
+
+function legacyObjects_(sheet) {
+  var values = sheet.getDataRange().getDisplayValues();
+  if (values.length < 2) return [];
+  var headers = values[0].map(key_);
+  return values.slice(1).filter(function(row) { return row.join('').trim() !== ''; }).map(function(row) {
+    var obj = {};
+    headers.forEach(function(header, i) { obj[header] = row[i]; });
+    ['costprice','sellingprice','price','stock','fee','total','quantity','qty','unitcost','paid','paidamount','balance','amount','profit'].forEach(function(k) { if (obj[k] !== undefined && obj[k] !== '') obj[k] = number_(obj[k], 0); });
+    ['timestamp','createdat','starttime','finishtime','date'].forEach(function(k) { if (obj[k]) obj[k] = formatUSDateTime_(obj[k]); });
+    return obj;
+  });
+}
+
+// ---------- Common helpers ----------
+function jsonOutput_(value) { return ContentService.createTextOutput(JSON.stringify(value)).setMimeType(ContentService.MimeType.JSON); }
+function safeJsonParse_(text, fallback) { try { return JSON.parse(text); } catch (e) { return fallback; } }
+function uniqueId_(prefix) { return prefix + '-' + Utilities.getUuid().replace(/-/g, '').slice(0, 6).toUpperCase(); }
+function number_(value, fallback) { var n = Number(value); return isNaN(n) ? Number(fallback || 0) : n; }
+function merge_(a, b) { var out = {}; Object.keys(a || {}).forEach(function(k){out[k]=a[k];}); Object.keys(b || {}).forEach(function(k){out[k]=b[k];}); return out; }
+function key_(value) { return String(value || '').toLowerCase().replace(/[^a-z0-9]/g, ''); }
+function toEnglishDigits_(value) { var map={'၀':'0','၁':'1','၂':'2','၃':'3','၄':'4','၅':'5','၆':'6','၇':'7','၈':'8','၉':'9'}; return String(value === null || value === undefined ? '' : value).replace(/[၀-၉]/g,function(d){return map[d]||d;}); }
+function parseFlexibleDate_(value) {
+  if (value instanceof Date && !isNaN(value.getTime())) return value;
+  if (value === null || value === undefined || value === '') return null;
+  var original=String(value), raw=toEnglishDigits_(original).trim();
+  var m=raw.match(/^(\d{1,2})[\/-](\d{1,2})[\/-](\d{4})(?:\s+(\d{1,2}):(\d{2})(?::(\d{2}))?\s*(AM|PM)?)?$/i);
+  if(m){var first=+m[1],second=+m[2],year=+m[3],hour=+(m[4]||0),minute=+(m[5]||0),sec=+(m[6]||0),ampm=String(m[7]||'').toUpperCase();var month=/[၀-၉]/.test(original)?second:first,day=/[၀-၉]/.test(original)?first:second;if(first>12){day=first;month=second;}if(second>12){month=first;day=second;}if(ampm==='PM'&&hour<12)hour+=12;if(ampm==='AM'&&hour===12)hour=0;var d=new Date(year,month-1,day,hour,minute,sec);return isNaN(d.getTime())?null:d;}
+  var fallback=new Date(raw); return isNaN(fallback.getTime())?null:fallback;
+}
+function formatUSDateTime_(value) { var d=parseFlexibleDate_(value)||new Date(); return Utilities.formatDate(d, Session.getScriptTimeZone() || 'Asia/Yangon', 'MM/dd/yyyy hh:mm:ss a'); }
+function nowUS_() { return formatUSDateTime_(new Date()); }
 `;
