@@ -324,8 +324,17 @@ export default function App() {
 
 
 
+  const refreshInventory = async () => {
+    try {
+      const data = await callRpc('getInventoryData');
+      setInventory(Array.isArray(data) ? data : []);
+    } catch (error) {
+      console.error('Inventory refresh failed:', error);
+    }
+  };
+
   const refreshAll = () => {
-    callRpc('getInventoryData').then(data => setInventory(data || [])).catch(console.error);
+    refreshInventory();
     callRpc('getRepairData').then(data => setRepairs(data || [])).catch(console.error);
     callRpc('getExpensesData').then(data => setExpenses(data || [])).catch(console.error);
     callRpc('getPurchasesData').then(data => setPurchases(Array.isArray(data) ? data : [])).catch(err => { console.warn('Purchases unavailable:', err); setPurchases([]); });
@@ -847,7 +856,7 @@ export default function App() {
               setPosCart={setPosCart}
               productCategories={productCategories}
               accessoryCategories={accessoryCategories}
-              onInventoryChanged={refreshAll}
+              onInventoryChanged={refreshInventory}
             />
           )}
 

@@ -1,5 +1,5 @@
 export const GAS_CODE_GS = String.raw`/**
- * KSM POS JSON Database Backend v20 Inventory CRUD
+ * KSM POS JSON Database Backend v21 Fast CRUD
  *
  * Each data type has its OWN fast JSON sheet:
  *   Inventory, Sale, Repair, Purchase, Expense, Staff, Settings
@@ -24,6 +24,13 @@ var ENTITY_SHEETS = {
   StockHistory: 'StockHistory'
 };
 var TERMINAL_REPAIR_STATUSES = ['Done', 'Delivered', 'Reject'];
+var ENTITY_CACHE_SECONDS = 120;
+
+function entityCacheKey_(entity) { return 'KSM_ENTITY_' + entity; }
+function clearEntityCache_(entity) {
+  try { CacheService.getScriptCache().remove(entityCacheKey_(entity)); } catch (e) {}
+}
+
 
 function doGet(e) {
   try {
@@ -464,13 +471,20 @@ function getEntitySheet_(entity) {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var name = sheetNameForEntity_(entity);
   var sheet = ss.getSheetByName(name);
-  if (!sheet) sheet = ss.insertSheet(name);
-  if (sheet.getLastRow() === 0 || sheet.getRange(1, 1, 1, 2).getDisplayValues()[0].join('|') !== 'ID|Record') {
-    if (sheet.getLastRow() > 0 && sheet.getDataRange().getDisplayValues().some(function(r){ return r.join('').trim() !== ''; })) {
+  var created = false;
+  if (!sheet) { sheet = ss.insertSheet(name); created = true; }
+
+  var lastRow = sheet.getLastRow();
+  if (lastRow === 0) {
+    styleJsonSheet_(sheet);
+  } else {
+    var first = sheet.getRange(1, 1, 1, 2).getDisplayValues()[0];
+    if (String(first[0] || '').trim() !== 'ID' || String(first[1] || '').trim() !== 'Record') {
       throw new Error('Sheet "' + name + '" is not JSON format. Run setupDatabase() to migrate it safely.');
     }
+    // Do not re-style the whole sheet on every API request. That was a major source of delay.
+    if (created) styleJsonSheet_(sheet);
   }
-  styleJsonSheet_(sheet);
   return sheet;
 }
 
@@ -493,6 +507,7 @@ function appendRecord_(id, record) {
   var entity = record.entity || entityFromId_(id);
   if (!entity) throw new Error('Cannot determine sheet for record: ' + id);
   getEntitySheet_(entity).appendRow([String(id), JSON.stringify(record)]);
+  clearEntityCache_(entity);
 }
 
 function upsertRecord_(id, record) {
@@ -505,6 +520,7 @@ function upsertRecord_(id, record) {
   var values = [[String(id), JSON.stringify(record)]];
   if (row > 0) sheet.getRange(row, 1, 1, 2).setValues(values);
   else sheet.getRange(sheet.getLastRow() + 1, 1, 1, 2).setValues(values);
+  clearEntityCache_(entity);
 }
 
 function deleteRecord_(id) {
@@ -522,8 +538,16 @@ function findRecordRowInSheet_(sheet, id) {
 function locateRecord_(id) {
   if (!id) return null;
   var preferred = entityFromId_(id);
+
+  // Product, repair, sale, purchase and other IDs already tell us their sheet.
+  // Avoid opening and searching every sheet for normal CRUD operations.
+  if (preferred) {
+    var preferredSheet = getEntitySheet_(preferred);
+    var preferredRow = findRecordRowInSheet_(preferredSheet, id);
+    return preferredRow > 0 ? { entity: preferred, sheet: preferredSheet, row: preferredRow } : null;
+  }
+
   var entities = Object.keys(ENTITY_SHEETS);
-  if (preferred) entities = [preferred].concat(entities.filter(function(e){ return e !== preferred; }));
   for (var i = 0; i < entities.length; i++) {
     var sheet = getEntitySheet_(entities[i]);
     var row = findRecordRowInSheet_(sheet, id);
@@ -539,20 +563,19 @@ function getRecordById_(id) {
 }
 
 function listEntity_(entity) {
+  var cache = CacheService.getScriptCache();
+  var cacheKey = entityCacheKey_(entity);
+  try {
+    var cached = cache.get(cacheKey);
+    if (cached) return safeJsonParse_(cached, []);
+  } catch (e) {}
+
   var sheet = getEntitySheet_(entity);
   var lastRow = sheet.getLastRow();
-  if (lastRow < 1) return [];
+  if (lastRow < 2) return [];
 
-  // Support both valid layouts:
-  // 1) Row 1 contains ID | Record headers, data starts at row 2.
-  // 2) Older converted sheets have no header, data starts at row 1.
-  var first = sheet.getRange(1, 1, 1, 2).getDisplayValues()[0];
-  var hasHeader = String(first[0] || '').trim().toLowerCase() === 'id' &&
-                  String(first[1] || '').trim().toLowerCase() === 'record';
-  var startRow = hasHeader ? 2 : 1;
-  if (lastRow < startRow) return [];
-
-  return sheet.getRange(startRow, 1, lastRow - startRow + 1, 2).getDisplayValues().map(function(row) {
+  var rows = sheet.getRange(2, 1, lastRow - 1, 2).getDisplayValues();
+  var records = rows.map(function(row) {
     var key = String(row[0] || '').trim();
     var text = String(row[1] || '').trim();
     if (!key || !text) return null;
@@ -563,6 +586,13 @@ function listEntity_(entity) {
     record.entity = record.entity || entity;
     return record;
   }).filter(function(record) { return record !== null; });
+
+  try {
+    var serialized = JSON.stringify(records);
+    // CacheService has a per-value size limit. Cache only when the result fits safely.
+    if (serialized.length < 90000) cache.put(cacheKey, serialized, ENTITY_CACHE_SECONDS);
+  } catch (e) {}
+  return records;
 }
 
 function listAllRecords_() {
