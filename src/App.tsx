@@ -847,6 +847,7 @@ export default function App() {
               setPosCart={setPosCart}
               productCategories={productCategories}
               accessoryCategories={accessoryCategories}
+              onInventoryChanged={refreshAll}
             />
           )}
 

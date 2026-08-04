@@ -14,7 +14,10 @@ import {
   Image as ImageIcon,
   Camera,
   Upload,
-  ShoppingCart
+  ShoppingCart,
+  Pencil,
+  Trash2,
+  Boxes
 } from 'lucide-react';
 import { InventoryItem, CartItem } from '../types';
 import { BarcodeScannerModal } from './BarcodeScannerModal';
@@ -36,6 +39,7 @@ interface InventoryViewProps {
   setPosCart?: React.Dispatch<React.SetStateAction<CartItem[]>>;
   productCategories: string[];
   accessoryCategories: string[];
+  onInventoryChanged?: () => void;
 }
 
 export const InventoryView: React.FC<InventoryViewProps> = ({
@@ -54,6 +58,7 @@ export const InventoryView: React.FC<InventoryViewProps> = ({
   setPosCart,
   productCategories,
   accessoryCategories,
+  onInventoryChanged,
 }) => {
   const [typeFilter, setTypeFilter] = useState('Phone');
   const categoryLabel = (type: string) => {
@@ -113,6 +118,9 @@ export const InventoryView: React.FC<InventoryViewProps> = ({
   const [addModel, setAddModel] = useState('');
   const [photoName, setPhotoName] = useState('');
   const [isUploadingImage, setIsUploadingImage] = useState(false);
+  const [editingItem, setEditingItem] = useState<InventoryItem | null>(null);
+  const [stockItem, setStockItem] = useState<InventoryItem | null>(null);
+  const [crudSaving, setCrudSaving] = useState(false);
   const galleryInputRef = useRef<HTMLInputElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
 
@@ -175,6 +183,67 @@ export const InventoryView: React.FC<InventoryViewProps> = ({
       if (galleryInputRef.current) galleryInputRef.current.value = '';
       if (cameraInputRef.current) cameraInputRef.current.value = '';
     }
+  };
+
+  const saveEditedItem = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!editingItem) return;
+    const form = event.currentTarget;
+    setCrudSaving(true);
+    try {
+      const payload = {
+        id: editingItem.id || editingItem.productid,
+        type: (form.elements.namedItem('type') as HTMLSelectElement).value,
+        category: (form.elements.namedItem('category') as HTMLInputElement).value,
+        brand: (form.elements.namedItem('brand') as HTMLInputElement).value,
+        model: (form.elements.namedItem('model') as HTMLInputElement).value,
+        accessoryType: (form.elements.namedItem('accessorytype') as HTMLInputElement).value,
+        grade: (form.elements.namedItem('grade') as HTMLSelectElement).value,
+        costPrice: Number((form.elements.namedItem('costprice') as HTMLInputElement).value),
+        price: Number((form.elements.namedItem('sellingprice') as HTMLInputElement).value),
+        barcode: (form.elements.namedItem('barcode') as HTMLInputElement).value || '-',
+        imei: (form.elements.namedItem('imei') as HTMLInputElement).value || '-',
+        specification: (form.elements.namedItem('specification') as HTMLTextAreaElement).value || '-',
+        status: (form.elements.namedItem('status') as HTMLSelectElement).value,
+      };
+      const result = await callRpc('updateInventoryItem', payload);
+      if (result?.status === 'error') throw new Error(result.message);
+      setEditingItem(null);
+      onInventoryChanged?.();
+    } catch (error: any) { alert(error?.message || String(error)); }
+    finally { setCrudSaving(false); }
+  };
+
+  const saveStockAdjustment = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!stockItem) return;
+    const form = event.currentTarget;
+    setCrudSaving(true);
+    try {
+      const result = await callRpc('adjustInventoryStock', {
+        id: stockItem.id || stockItem.productid,
+        mode: (form.elements.namedItem('mode') as HTMLSelectElement).value,
+        quantity: Number((form.elements.namedItem('quantity') as HTMLInputElement).value),
+        reason: (form.elements.namedItem('reason') as HTMLSelectElement).value,
+        note: (form.elements.namedItem('note') as HTMLInputElement).value,
+      });
+      if (result?.status === 'error') throw new Error(result.message);
+      setStockItem(null);
+      onInventoryChanged?.();
+    } catch (error: any) { alert(error?.message || String(error)); }
+    finally { setCrudSaving(false); }
+  };
+
+  const deleteInventoryItem = async (item: InventoryItem) => {
+    const name = `${item.brand || ''} ${item.model || ''}`.trim();
+    if (!confirm(`Delete ${name}? This is a safe soft delete.`)) return;
+    setCrudSaving(true);
+    try {
+      const result = await callRpc('deleteInventoryItem', { id: item.id || item.productid });
+      if (result?.status === 'error') throw new Error(result.message);
+      onInventoryChanged?.();
+    } catch (error: any) { alert(error?.message || String(error)); }
+    finally { setCrudSaving(false); }
   };
 
   const normalizeText = (value: unknown) => String(value || '').trim().toLowerCase();
@@ -534,6 +603,12 @@ export const InventoryView: React.FC<InventoryViewProps> = ({
                   )}
                 </div>
 
+                <div className="relative z-30 grid grid-cols-3 gap-2 mb-3" onClick={(event) => event.stopPropagation()}>
+                  <button type="button" onClick={() => setEditingItem(item)} className="py-2 rounded-xl bg-blue-50 text-blue-700 dark:bg-blue-950/40 dark:text-blue-300 text-[10px] font-black flex items-center justify-center gap-1"><Pencil size={13}/> Edit</button>
+                  <button type="button" onClick={() => setStockItem(item)} className="py-2 rounded-xl bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300 text-[10px] font-black flex items-center justify-center gap-1"><Boxes size={13}/> Stock</button>
+                  <button type="button" disabled={crudSaving} onClick={() => deleteInventoryItem(item)} className="py-2 rounded-xl bg-red-50 text-red-700 dark:bg-red-950/40 dark:text-red-300 text-[10px] font-black flex items-center justify-center gap-1"><Trash2 size={13}/> Delete</button>
+                </div>
+
                 <div className="flex items-end justify-between pt-4 border-t border-slate-100 dark:border-slate-800 mt-2">
                   <div>
                     <div className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-0.5">Selling Price</div>
@@ -794,6 +869,42 @@ export const InventoryView: React.FC<InventoryViewProps> = ({
           </div>
         </div>
       )}
+      {editingItem && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-slate-950/65 p-4">
+          <form onSubmit={saveEditedItem} className="w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-3xl bg-white dark:bg-slate-900 p-6 space-y-4 shadow-2xl">
+            <div className="flex justify-between items-center"><div><h3 className="font-black text-xl">Edit Inventory Item</h3><p className="text-xs text-slate-400">{editingItem.id || editingItem.productid}</p></div><button type="button" onClick={() => setEditingItem(null)}><X/></button></div>
+            <div className="grid grid-cols-2 gap-3">
+              <label className="text-xs font-bold">Main Type<input name="type" defaultValue={editingItem.type || 'Accessories'} className="mt-1 w-full p-3 rounded-xl bg-slate-100 dark:bg-slate-800"/></label>
+              <label className="text-xs font-bold">Old Category<input name="category" defaultValue={editingItem.category || ''} className="mt-1 w-full p-3 rounded-xl bg-slate-100 dark:bg-slate-800"/></label>
+              <label className="text-xs font-bold">Brand<input name="brand" defaultValue={editingItem.brand || ''} className="mt-1 w-full p-3 rounded-xl bg-slate-100 dark:bg-slate-800"/></label>
+              <label className="text-xs font-bold">Name / Model<input name="model" required defaultValue={editingItem.model || ''} className="mt-1 w-full p-3 rounded-xl bg-slate-100 dark:bg-slate-800"/></label>
+              <label className="text-xs font-bold">Accessory Type<input name="accessorytype" defaultValue={editingItem.accessorytype || editingItem.accessoryType || ''} className="mt-1 w-full p-3 rounded-xl bg-slate-100 dark:bg-slate-800"/></label>
+              <label className="text-xs font-bold">Condition<select name="grade" defaultValue={editingItem.grade || 'New'} className="mt-1 w-full p-3 rounded-xl bg-slate-100 dark:bg-slate-800"><option value="New">New</option><option value="Used/Second Hand">Used / Second Hand</option></select></label>
+              <label className="text-xs font-bold">Cost Price<input name="costprice" type="number" defaultValue={Number(editingItem.costprice || editingItem.costPrice || 0)} className="mt-1 w-full p-3 rounded-xl bg-slate-100 dark:bg-slate-800"/></label>
+              <label className="text-xs font-bold">Selling Price<input name="sellingprice" type="number" defaultValue={Number(editingItem.sellingprice || editingItem.price || 0)} className="mt-1 w-full p-3 rounded-xl bg-slate-100 dark:bg-slate-800"/></label>
+              <label className="text-xs font-bold">Barcode<input name="barcode" defaultValue={editingItem.barcode || ''} className="mt-1 w-full p-3 rounded-xl bg-slate-100 dark:bg-slate-800"/></label>
+              <label className="text-xs font-bold">IMEI<input name="imei" defaultValue={editingItem.imei || ''} className="mt-1 w-full p-3 rounded-xl bg-slate-100 dark:bg-slate-800"/></label>
+              <label className="text-xs font-bold">Status<select name="status" defaultValue={editingItem.status || 'Active'} className="mt-1 w-full p-3 rounded-xl bg-slate-100 dark:bg-slate-800"><option>Active</option><option>Inactive</option></select></label>
+            </div>
+            <label className="block text-xs font-bold">Specification<textarea name="specification" defaultValue={editingItem.specification || ''} rows={3} className="mt-1 w-full p-3 rounded-xl bg-slate-100 dark:bg-slate-800"/></label>
+            <button disabled={crudSaving} className="w-full py-4 rounded-2xl bg-blue-600 text-white font-black">{crudSaving ? 'Saving...' : 'Save Changes'}</button>
+          </form>
+        </div>
+      )}
+
+      {stockItem && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-slate-950/65 p-4">
+          <form onSubmit={saveStockAdjustment} className="w-full max-w-md rounded-3xl bg-white dark:bg-slate-900 p-6 space-y-4 shadow-2xl">
+            <div className="flex justify-between"><div><h3 className="font-black text-xl">Adjust Stock</h3><p className="text-sm text-slate-400">{stockItem.brand} {stockItem.model} · Current: {stockItem.stock}</p></div><button type="button" onClick={() => setStockItem(null)}><X/></button></div>
+            <label className="block text-xs font-bold">Action<select name="mode" className="mt-1 w-full p-3 rounded-xl bg-slate-100 dark:bg-slate-800"><option value="add">Add stock</option><option value="remove">Remove stock</option><option value="set">Set exact stock</option></select></label>
+            <label className="block text-xs font-bold">Quantity<input name="quantity" type="number" min="0" required defaultValue="1" className="mt-1 w-full p-3 rounded-xl bg-slate-100 dark:bg-slate-800"/></label>
+            <label className="block text-xs font-bold">Reason<select name="reason" className="mt-1 w-full p-3 rounded-xl bg-slate-100 dark:bg-slate-800"><option>Purchase</option><option>Return</option><option>Damage</option><option>Lost</option><option>Manual Adjustment</option></select></label>
+            <label className="block text-xs font-bold">Note<input name="note" className="mt-1 w-full p-3 rounded-xl bg-slate-100 dark:bg-slate-800" placeholder="Optional"/></label>
+            <button disabled={crudSaving} className="w-full py-4 rounded-2xl bg-emerald-600 text-white font-black">{crudSaving ? 'Saving...' : 'Update Stock'}</button>
+          </form>
+        </div>
+      )}
+
       <BarcodeScannerModal open={scannerOpen} onClose={() => setScannerOpen(false)} onDetected={(value) => setScannedCode(value)} title="Scan Inventory IMEI / Barcode" />
     </div>
   );

@@ -26,6 +26,8 @@ export interface InventoryItem {
   price: number;
   stock: number;
   status?: string;
+  category?: string;
+  updatedat?: string;
   imei?: string;
   grade?: string;
   accessorytype?: string;

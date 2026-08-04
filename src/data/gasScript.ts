@@ -1,5 +1,5 @@
 export const GAS_CODE_GS = String.raw`/**
- * KSM POS JSON Database Backend v18
+ * KSM POS JSON Database Backend v20 Inventory CRUD
  *
  * Each data type has its OWN fast JSON sheet:
  *   Inventory, Sale, Repair, Purchase, Expense, Staff, Settings
@@ -20,7 +20,8 @@ var ENTITY_SHEETS = {
   Purchase: 'Purchase',
   Expense: 'Expense',
   Staff: 'Staff',
-  Setting: 'Settings'
+  Setting: 'Settings',
+  StockHistory: 'StockHistory'
 };
 var TERMINAL_REPAIR_STATUSES = ['Done', 'Delivered', 'Reject'];
 
@@ -48,7 +49,7 @@ function doPost(e) {
 
 function dispatch_(method, data) {
   var lock = LockService.getScriptLock();
-  var writeMethods = ['saveInventory','addItem','deleteItem','saveRepair','updateRepairStatus','recordSale','recordMultipleSales','savePurchase','saveExpense','saveSettings','saveStaffMember','deleteStaffMember','setupDatabase','initializeSheets','convertOldInventoryToNew'];
+  var writeMethods = ['saveInventory','addItem','deleteItem','saveRepair','updateRepairStatus','recordSale','recordMultipleSales','savePurchase','saveExpense','saveSettings','saveStaffMember','deleteStaffMember','setupDatabase','initializeSheets','convertOldInventoryToNew','createInventoryItem','updateInventoryItem','adjustInventoryStock','deleteInventoryItem','restoreInventoryItem'];
   var needsLock = writeMethods.indexOf(method) !== -1;
   if (needsLock) lock.waitLock(30000);
 
@@ -66,7 +67,11 @@ function dispatch_(method, data) {
         return convertOldInventoryToNew();
 
       case 'getInventoryData':
-        return listEntity_('Inventory');
+        return listEntity_('Inventory').filter(function(item){ return item.status !== 'Deleted'; });
+      case 'getInventoryItem':
+        return getInventoryItem_(data);
+      case 'getStockHistory':
+        return getStockHistory_(data);
       case 'getRepairData':
         return listEntity_('Repair');
       case 'getExpensesData':
@@ -84,9 +89,17 @@ function dispatch_(method, data) {
 
       case 'saveInventory':
       case 'addItem':
+      case 'createInventoryItem':
         return saveInventory_(data);
+      case 'updateInventoryItem':
+        return updateInventoryItem_(data);
+      case 'adjustInventoryStock':
+        return adjustInventoryStock_(data);
       case 'deleteItem':
-        return deleteRecord_(String((data && data.id) || data || ''));
+      case 'deleteInventoryItem':
+        return softDeleteInventoryItem_(data);
+      case 'restoreInventoryItem':
+        return restoreInventoryItem_(data);
 
       case 'saveRepair':
         return saveRepair_(data);
@@ -166,6 +179,79 @@ function saveInventory_(data) {
   });
   upsertRecord_(id, record);
   return { status: 'success', id: id };
+}
+
+function getInventoryItem_(data) {
+  var id = String((data && (data.id || data.productid)) || data || '');
+  var item = getRecordById_(id);
+  if (!item || item.entity !== 'Inventory') return { status: 'error', message: 'Inventory item not found: ' + id };
+  return { status: 'success', item: item };
+}
+
+function updateInventoryItem_(data) {
+  var id = String(data.id || data.productid || '');
+  if (!id) throw new Error('Product ID is required.');
+  var existing = getRecordById_(id);
+  if (!existing || existing.entity !== 'Inventory') throw new Error('Inventory item not found: ' + id);
+  var patch = merge_(data, { id: id, productid: id, entity: 'Inventory', updatedat: nowUS_() });
+  if (data.costPrice !== undefined) patch.costprice = number_(data.costPrice, existing.costprice || 0);
+  if (data.price !== undefined) { patch.sellingprice = number_(data.price, existing.sellingprice || 0); patch.price = patch.sellingprice; }
+  if (data.accessoryType !== undefined) patch.accessorytype = data.accessoryType;
+  if (data.imageId !== undefined) patch.imageid = data.imageId;
+  delete patch.costPrice; delete patch.accessoryType; delete patch.imageId;
+  var updated = merge_(existing, patch);
+  upsertRecord_(id, updated);
+  return { status: 'success', id: id, item: updated };
+}
+
+function adjustInventoryStock_(data) {
+  var id = String(data.id || data.productid || '');
+  var existing = getRecordById_(id);
+  if (!existing || existing.entity !== 'Inventory') throw new Error('Inventory item not found: ' + id);
+  var before = number_(existing.stock, 0);
+  var mode = String(data.mode || data.action || 'add').toLowerCase();
+  var quantity = Math.abs(number_(data.quantity !== undefined ? data.quantity : data.qty, 0));
+  var after = before;
+  if (mode === 'set') after = number_(data.stock !== undefined ? data.stock : data.quantity, before);
+  else if (mode === 'remove' || mode === 'subtract' || mode === 'decrease') after = before - quantity;
+  else after = before + quantity;
+  if (after < 0) throw new Error('Stock cannot be below zero. Current stock: ' + before);
+  existing.stock = after;
+  existing.updatedat = nowUS_();
+  upsertRecord_(id, existing);
+  var historyId = uniqueId_('STK');
+  appendRecord_(historyId, {
+    entity: 'StockHistory', id: historyId, productid: id,
+    action: mode, quantity: quantity, before: before, after: after,
+    reason: data.reason || 'Adjustment', note: data.note || '',
+    staff: data.staff || data.updatedby || 'Admin', timestamp: nowUS_()
+  });
+  return { status: 'success', id: id, stock: after, historyId: historyId };
+}
+
+function softDeleteInventoryItem_(data) {
+  var id = String((data && (data.id || data.productid)) || data || '');
+  var existing = getRecordById_(id);
+  if (!existing || existing.entity !== 'Inventory') throw new Error('Inventory item not found: ' + id);
+  existing.status = 'Deleted'; existing.deletedat = nowUS_(); existing.updatedat = nowUS_();
+  upsertRecord_(id, existing);
+  return { status: 'success', id: id };
+}
+
+function restoreInventoryItem_(data) {
+  var id = String((data && (data.id || data.productid)) || data || '');
+  var existing = getRecordById_(id);
+  if (!existing || existing.entity !== 'Inventory') throw new Error('Inventory item not found: ' + id);
+  existing.status = 'Active'; existing.updatedat = nowUS_(); delete existing.deletedat;
+  upsertRecord_(id, existing);
+  return { status: 'success', id: id, item: existing };
+}
+
+function getStockHistory_(data) {
+  var id = String((data && (data.id || data.productid)) || '');
+  var rows = listEntity_('StockHistory');
+  if (id) rows = rows.filter(function(row){ return String(row.productid) === id; });
+  return rows.sort(function(a,b){ return String(b.timestamp || '').localeCompare(String(a.timestamp || '')); });
 }
 
 function saveRepair_(data) {
@@ -397,6 +483,7 @@ function entityFromId_(id) {
   if (/^Expense-/i.test(id)) return 'Expense';
   if (/^Staff-/i.test(id)) return 'Staff';
   if (/^Setting-/i.test(id)) return 'Setting';
+  if (/^STK-/i.test(id)) return 'StockHistory';
   return '';
 }
 
