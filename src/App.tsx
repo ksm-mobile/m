@@ -428,7 +428,7 @@ export default function App() {
 
     let itemsToSave: any[] = [];
     if (posCart.length > 0) {
-      itemsToSave = posCart.flatMap((item) => {
+      itemsToSave = posCart.map((item) => {
         const orig = Number(item.price) || 0;
         const dtype = item.discountType || 'none';
         const dval = Number(item.discountValue) || 0;
@@ -446,21 +446,23 @@ export default function App() {
           discInfo = `Discount ${dval.toLocaleString()} MMK`;
         }
 
-        return Array.from({ length: quantity }, (_, index) => ({
+        return {
           productId: item.id || "WALK-IN",
           model: item.model,
           price: adjustedPrice,
           costPrice: item.costprice || 0,
           specification: item.specification || '-',
-          imei: quantity > 1 && index > 0 ? '-' : (item.imei || '-'),
+          imei: item.imei || '-',
           warranty: item.warranty || 'No Warranty',
           remark: discInfo,
-        }));
+          quantity,
+          qty: quantity,
+        };
       });
     }
 
     const cashReceived = Number((form.elements.namedItem('cashReceived') as HTMLInputElement)?.value || 0);
-    const totalAmount = itemsToSave.reduce((sum, item) => sum + item.price, 0);
+    const totalAmount = itemsToSave.reduce((sum, item) => sum + (Number(item.price) || 0) * Math.max(1, Number(item.quantity || item.qty) || 1), 0);
     const changeAmount = paymentMethod === 'Cash' ? Math.max(0, cashReceived - totalAmount) : 0;
     const baseRemark = (form.elements.namedItem('remark') as HTMLInputElement)?.value || '';
     const paymentRemark = paymentMethod === 'Cash'
@@ -718,7 +720,9 @@ export default function App() {
           imei: item.imei,
           specification: item.specification,
           warranty: item.warranty,
-          remark: item.remark || ''
+          remark: item.remark || '',
+          quantity: Number(item.quantity || item.qty) || 1,
+          qty: Number(item.quantity || item.qty) || 1
         }],
         total: Number(item.price),
         remark: item.remark || '',

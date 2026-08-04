@@ -255,17 +255,17 @@ function flattenSales_(sales) {
   var rows = [];
   sales.forEach(function(sale) {
     (sale.items || []).forEach(function(item) {
-      var qty = number_(item.qty, 1);
-      for (var i = 0; i < qty; i++) {
-        rows.push({
-          timestamp: sale.timestamp, voucherno: sale.voucherno, productid: item.productId,
-          type: item.model, price: number_(item.price, 0), customer: sale.customer, phone: sale.phone,
-          imei: i === 0 ? item.imei : '-', warranty: item.warranty,
-          paymentmethod: sale.paymentmethod, channel: sale.channel, specification: item.specification,
-          remark: [item.remark, sale.remark].filter(Boolean).join(' | '),
-          costprice: number_(item.costPrice, 0), profit: number_(item.profit, 0)
-        });
-      }
+      var qty = Math.max(1, number_(item.qty || item.quantity, 1));
+      var unitPrice = number_(item.price, 0);
+      var unitCost = number_(item.costPrice, 0);
+      rows.push({
+        timestamp: sale.timestamp, voucherno: sale.voucherno, productid: item.productId,
+        type: item.model, price: unitPrice * qty, unitprice: unitPrice, quantity: qty, qty: qty,
+        customer: sale.customer, phone: sale.phone, imei: item.imei || '-', warranty: item.warranty,
+        paymentmethod: sale.paymentmethod, channel: sale.channel, specification: item.specification,
+        remark: [item.remark, sale.remark].filter(Boolean).join(' | '),
+        costprice: unitCost * qty, unitcost: unitCost, profit: number_(item.profit, 0) * qty
+      });
     });
   });
   return rows;

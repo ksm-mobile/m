@@ -78,6 +78,8 @@ export interface SaleRecord {
   remark: string;
   costprice?: number;
   profit?: number;
+  quantity?: number;
+  qty?: number;
 }
 
 export type RepairStatus = 'Pending' | 'Repairing' | 'Done' | 'Delivered' | 'Reject';
@@ -148,6 +150,8 @@ export interface ReceiptData {
     warranty?: string;
     issue?: string;
     remark?: string;
+    quantity?: number;
+    qty?: number;
   }>;
   total: number;
   paymentMethod?: string;

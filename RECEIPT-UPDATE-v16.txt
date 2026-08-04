@@ -1,0 +1,12 @@
+KSM POS v16 Receipt Grouping Update
+
+- Same products are displayed once on the receipt.
+- Example: A12 × 7
+- Displays unit amount: 2,500 × 7 = 17,500 MMK
+- Sale JSON stores quantity (qty) instead of seven duplicate item objects.
+- Google Apps Script Sales history returns one grouped row with quantity and subtotal.
+- Accessory specification, warranty and IMEI/SN remain visible.
+
+Deploy both parts:
+1. Upload the website files to GitHub and run Deploy KSM POS.
+2. Replace Apps Script Code.gs with Google-Apps-Script/Code.gs and deploy a new Web App version.
