@@ -1,4 +1,4 @@
-export const GAS_SCRIPT = String.raw`/**
+export const GAS_CODE_GS = String.raw`/**
  * KSM POS JSON Database Backend v14
  *
  * Each data type has its OWN fast JSON sheet:
@@ -566,4 +566,57 @@ function parseFlexibleDate_(value) {
 }
 function formatUSDateTime_(value) { var d=parseFlexibleDate_(value)||new Date(); return Utilities.formatDate(d, Session.getScriptTimeZone() || 'Asia/Yangon', 'MM/dd/yyyy hh:mm:ss a'); }
 function nowUS_() { return formatUSDateTime_(new Date()); }
+`;
+
+
+export const GAS_INDEX_HTML = String.raw`<!DOCTYPE html>
+<html>
+  <head>
+    <base target="_top">
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>KSM POS Studio Web API</title>
+    <style>
+      body {
+        font-family: system-ui, -apple-system, sans-serif;
+        background-color: #0f172a;
+        color: #f8fafc;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        height: 100vh;
+        margin: 0;
+        text-align: center;
+      }
+      .card {
+        background: #1e293b;
+        padding: 2.5rem;
+        border-radius: 1rem;
+        border: 1px solid #334155;
+        max-width: 480px;
+        box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.3);
+      }
+      .badge {
+        background: #22c55e;
+        color: #052e16;
+        font-weight: bold;
+        padding: 0.25rem 0.75rem;
+        border-radius: 9999px;
+        font-size: 0.75rem;
+        text-transform: uppercase;
+        display: inline-block;
+        margin-bottom: 1rem;
+      }
+      h1 { font-size: 1.5rem; margin-bottom: 0.5rem; }
+      p { color: #94a3b8; font-size: 0.875rem; line-height: 1.5; }
+    </style>
+  </head>
+  <body>
+    <div class="card">
+      <div class="badge">API Active</div>
+      <h1>KSM POS Google Apps Script API</h1>
+      <p>This Web App serves as the Google Sheets backend database for KSM POS & Mobile Repair Studio.</p>
+    </div>
+  </body>
+</html>
 `;
