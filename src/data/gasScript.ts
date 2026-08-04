@@ -453,13 +453,29 @@ function getRecordById_(id) {
 
 function listEntity_(entity) {
   var sheet = getEntitySheet_(entity);
-  if (sheet.getLastRow() < 2) return [];
-  return sheet.getRange(2, 1, sheet.getLastRow() - 1, 2).getDisplayValues().map(function(row) {
-    var record = safeJsonParse_(row[1], {});
-    record.id = record.id || row[0];
+  var lastRow = sheet.getLastRow();
+  if (lastRow < 1) return [];
+
+  // Support both valid layouts:
+  // 1) Row 1 contains ID | Record headers, data starts at row 2.
+  // 2) Older converted sheets have no header, data starts at row 1.
+  var first = sheet.getRange(1, 1, 1, 2).getDisplayValues()[0];
+  var hasHeader = String(first[0] || '').trim().toLowerCase() === 'id' &&
+                  String(first[1] || '').trim().toLowerCase() === 'record';
+  var startRow = hasHeader ? 2 : 1;
+  if (lastRow < startRow) return [];
+
+  return sheet.getRange(startRow, 1, lastRow - startRow + 1, 2).getDisplayValues().map(function(row) {
+    var key = String(row[0] || '').trim();
+    var text = String(row[1] || '').trim();
+    if (!key || !text) return null;
+    var record = safeJsonParse_(text, null);
+    if (!record || typeof record !== 'object') return null;
+    record.id = record.id || key;
+    record.productid = record.productid || (entity === 'Inventory' ? record.id : record.productid);
     record.entity = record.entity || entity;
     return record;
-  }).filter(function(record) { return record && Object.keys(record).length; });
+  }).filter(function(record) { return record !== null; });
 }
 
 function listAllRecords_() {
