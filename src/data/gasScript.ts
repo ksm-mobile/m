@@ -1,5 +1,5 @@
 export const GAS_CODE_GS = String.raw`/**
- * KSM POS JSON Database Backend v14
+ * KSM POS JSON Database Backend v18
  *
  * Each data type has its OWN fast JSON sheet:
  *   Inventory, Sale, Repair, Purchase, Expense, Staff, Settings
@@ -48,7 +48,7 @@ function doPost(e) {
 
 function dispatch_(method, data) {
   var lock = LockService.getScriptLock();
-  var writeMethods = ['saveInventory','addItem','deleteItem','saveRepair','updateRepairStatus','recordSale','recordMultipleSales','savePurchase','saveExpense','saveSettings','saveStaffMember','deleteStaffMember','setupDatabase','initializeSheets'];
+  var writeMethods = ['saveInventory','addItem','deleteItem','saveRepair','updateRepairStatus','recordSale','recordMultipleSales','savePurchase','saveExpense','saveSettings','saveStaffMember','deleteStaffMember','setupDatabase','initializeSheets','convertOldInventoryToNew'];
   var needsLock = writeMethods.indexOf(method) !== -1;
   if (needsLock) lock.waitLock(30000);
 
@@ -61,6 +61,9 @@ function dispatch_(method, data) {
       case 'setupDatabase':
       case 'initializeSheets':
         return setupDatabase();
+
+      case 'convertOldInventoryToNew':
+        return convertOldInventoryToNew();
 
       case 'getInventoryData':
         return listEntity_('Inventory');
@@ -548,6 +551,196 @@ function legacyObjects_(sheet) {
   });
 }
 
+
+// ---------- One-time old Inventory JSON converter ----------
+/**
+ * Converts old ITEM-xxxxxx JSON records into the current Inventory JSON format.
+ *
+ * Source sheet: Inventory (or change sourceSheetName below)
+ * Destination sheet: Inventory_New
+ *
+ * Old row example:
+ * ITEM-055697 | {"category":"Cable","buyPrice":3650,...}
+ *
+ * New row example:
+ * PRD-055697 | {"entity":"Inventory","id":"PRD-055697",...}
+ */
+function convertOldInventoryToNew() {
+  var spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
+  var sourceSheetName = 'Inventory';
+  var destinationSheetName = 'Inventory_New';
+  var sourceSheet = spreadsheet.getSheetByName(sourceSheetName);
+
+  if (!sourceSheet) throw new Error('Source sheet "' + sourceSheetName + '" was not found.');
+
+  var destinationSheet = spreadsheet.getSheetByName(destinationSheetName);
+  if (!destinationSheet) destinationSheet = spreadsheet.insertSheet(destinationSheetName);
+
+  var lastRow = sourceSheet.getLastRow();
+  if (lastRow < 1) throw new Error('No inventory data was found.');
+
+  var oldRows = sourceSheet.getRange(1, 1, lastRow, 2).getDisplayValues();
+  var convertedRows = [];
+  var errors = [];
+
+  oldRows.forEach(function(row, index) {
+    var sheetRow = index + 1;
+    var oldKey = String(row[0] || '').trim();
+    var jsonText = String(row[1] || '').trim();
+
+    if (!oldKey || !jsonText) return;
+    if (!/^ITEM-/i.test(oldKey)) return;
+
+    try {
+      var oldItem = JSON.parse(jsonText);
+      var newItem = convertSingleInventoryItem_(oldKey, oldItem);
+      convertedRows.push([newItem.id, JSON.stringify(newItem)]);
+    } catch (error) {
+      errors.push('Row ' + sheetRow + ': ' + error.message);
+    }
+  });
+
+  if (convertedRows.length === 0) throw new Error('No valid ITEM inventory rows were found.');
+
+  destinationSheet.clearContents();
+  destinationSheet.getRange(1, 1, convertedRows.length, 2).setValues(convertedRows);
+  destinationSheet.setColumnWidth(1, 150);
+  destinationSheet.setColumnWidth(2, 1000);
+  SpreadsheetApp.flush();
+
+  var message = convertedRows.length + ' inventory items were converted successfully.\n\nNew sheet: ' + destinationSheetName;
+  if (errors.length > 0) {
+    message += '\n\nRows with errors: ' + errors.length + '\n\n' + errors.slice(0, 20).join('\n');
+  }
+
+  try { SpreadsheetApp.getUi().alert(message); } catch (e) {}
+  return { status: 'success', converted: convertedRows.length, errors: errors, destinationSheet: destinationSheetName };
+}
+
+function convertSingleInventoryItem_(oldKey, oldItem) {
+  var oldId = String(oldItem.id || oldKey || '').trim();
+  var productId = createProductId_(oldId);
+  var category = cleanText_(oldItem.category);
+  var productName = cleanText_(oldItem.name || oldItem.model);
+  var comment = cleanText_(oldItem.comment || oldItem.remark);
+  var barcode = cleanText_(oldItem.barcode || oldItem.imei);
+  var imageId = cleanText_(oldItem.imageId || oldItem.imageid);
+  var costPrice = migrationNumber_(oldItem.buyPrice !== undefined ? oldItem.buyPrice : oldItem.costprice);
+  var sellingPrice = migrationNumber_(oldItem.sellPrice !== undefined ? oldItem.sellPrice : oldItem.sellingprice);
+  var stock = migrationNumber_(oldItem.stock);
+  var brandAndModel = detectBrandAndModel_(productName, category, comment);
+  var grade = detectGrade_(category, productName, comment);
+  var accessoryType = detectAccessoryType_(category, productName, comment);
+  var productType = detectProductType_(category, productName, comment);
+  var specification = buildSpecification_(accessoryType, comment);
+
+  return {
+    entity: 'Inventory',
+    id: productId,
+    productid: productId,
+    type: productType,
+    category: category || 'Other',
+    brand: brandAndModel.brand,
+    model: brandAndModel.model,
+    costprice: costPrice,
+    sellingprice: sellingPrice,
+    price: sellingPrice,
+    stock: stock,
+    status: 'Active',
+    imei: productType === 'Phone' ? barcode : '',
+    barcode: barcode,
+    grade: grade,
+    accessorytype: accessoryType,
+    specification: specification,
+    imageid: imageId,
+    updatedat: nowUS_()
+  };
+}
+
+function createProductId_(oldId) {
+  var suffix = String(oldId || '').trim().toUpperCase()
+    .replace(/^ITEM-/, '').replace(/^PRD-/, '').replace(/[^A-Z0-9]/g, '');
+  if (!suffix) suffix = Utilities.getUuid().replace(/-/g, '').substring(0, 6).toUpperCase();
+  return 'PRD-' + suffix;
+}
+
+function detectBrandAndModel_(name, category, comment) {
+  var searchText = (name + ' ' + category + ' ' + comment).toLowerCase();
+  var knownBrands = [
+    ['Remax', ['remax', 'rpp ', 'rm550', 'rm502', 'rm512']], ['Apple', ['apple', 'iphone', 'lightning']],
+    ['Samsung', ['samsung', 'sam ']], ['Redmi', ['redmi']], ['Xiaomi', ['xiaomi', ' mi ', 'mi 120w']],
+    ['Oppo', ['oppo']], ['Vivo', ['vivo']], ['Realme', ['realme']], ['Huawei', ['huawei']],
+    ['Tecno', ['tecno']], ['Infinix', ['infinix']], ['MPT', ['mpt']], ['Mytel', ['mytel']],
+    ['ATOM', ['atom']], ['Ooredoo', ['ooredoo']], ['Vjun', ['vjun']], ['Golf', ['golf']],
+    ['AKEKIO', ['akekio']], ['Bemax', ['bemax']], ['Dprui', ['dprui']], ['JDO', ['jdo']], ['SoloFish', ['solofish']]
+  ];
+  var detectedBrand = '';
+  for (var i = 0; i < knownBrands.length; i++) {
+    if (knownBrands[i][1].some(function(keyword) { return searchText.indexOf(keyword) !== -1; })) {
+      detectedBrand = knownBrands[i][0]; break;
+    }
+  }
+  return { brand: detectedBrand, model: name };
+}
+
+function detectGrade_(category, name, comment) {
+  var text = (category + ' ' + name + ' ' + comment).toLowerCase();
+  var usedWords = ['second', 'second hand', 'used', 'အသုံးပြုပြီး', 'အဟောင်း'];
+  return usedWords.some(function(word) { return text.indexOf(word) !== -1; }) ? 'Used/Second Hand' : 'New';
+}
+
+function detectProductType_(category, name, comment) {
+  var text = (cleanText_(category) + ' ' + cleanText_(name) + ' ' + cleanText_(comment)).toLowerCase();
+  var accessoryCategories = [
+    'cable','charger','adapter','earphones','power bank','powerbank','accessories','မှန်ကဒ်','sim cards','games',
+    'အားသွင်းကြိုး','အားသွင်းခေါင်း','အားသွင်းကြိုး+ခေါင်း','နားကြပ်','မှန်မကွဲ','ကာဗာ','အခြား','ငွေဖြည့်ကဒ်'
+  ];
+  if (accessoryCategories.some(function(item) { return text.indexOf(item.toLowerCase()) !== -1; })) return 'Accessories';
+
+  var phoneWords = ['phone','iphone','samsung','redmi','xiaomi','oppo','vivo','realme','huawei','tecno','infinix','second hand','used phone'];
+  if (phoneWords.some(function(item) { return text.indexOf(item) !== -1; })) return 'Phone';
+  if (text.indexOf('service') !== -1 || text.indexOf('account') !== -1) return 'Services';
+  return 'Other';
+}
+
+function detectAccessoryType_(category, name, comment) {
+  var originalCategory = cleanText_(category);
+  var categoryLower = originalCategory.toLowerCase();
+  var text = (originalCategory + ' ' + name + ' ' + comment).toLowerCase();
+
+  if (categoryLower === 'cable') {
+    if (text.indexOf('3in1') !== -1 || text.indexOf('3 in 1') !== -1 || text.indexOf('4in1') !== -1) return 'Multi Cable';
+    if (text.indexOf('typec to c') !== -1 || text.indexOf('cto c') !== -1 || text.indexOf('c to c') !== -1) return 'Type-C to Type-C Cable';
+    if (text.indexOf('iphone') !== -1 || text.indexOf('lightning') !== -1 || text.indexOf('lighting') !== -1) return 'Lightning Cable';
+    if (text.indexOf('typec') !== -1 || text.indexOf('type-c') !== -1) return 'Type-C Cable';
+    if (text.indexOf('micro') !== -1) return 'Micro USB Cable';
+    return 'အားသွင်းကြိုး';
+  }
+  if (categoryLower === 'charger') return 'အားသွင်းခေါင်း';
+  if (categoryLower === 'adapter') return 'အားသွင်းကြိုး+ခေါင်း';
+  if (categoryLower === 'earphones') return 'နားကြပ်';
+  if (categoryLower === 'power bank' || categoryLower === 'powerbank') return 'PowerBank';
+  if (originalCategory === 'မှန်ကဒ်') return 'မှန်မကွဲ';
+  if (categoryLower === 'sim cards') return 'ငွေဖြည့်ကဒ်';
+  if (categoryLower === 'services') return 'Service';
+  if (categoryLower === 'games') return 'Game Accessories';
+  if (categoryLower === 'accessories') return 'အခြား';
+  return originalCategory || 'Other';
+}
+
+function buildSpecification_(accessoryType, comment) {
+  var typeText = cleanText_(accessoryType);
+  var commentText = cleanText_(comment);
+  return commentText ? '[' + typeText + '] - ' + commentText : '[' + typeText + '] -';
+}
+
+function cleanText_(value) { return value === null || value === undefined ? '' : String(value).trim(); }
+function migrationNumber_(value) {
+  if (value === null || value === undefined || value === '') return 0;
+  var n = Number(String(value).replace(/,/g, ''));
+  return isNaN(n) ? 0 : n;
+}
+
 // ---------- Common helpers ----------
 function jsonOutput_(value) { return ContentService.createTextOutput(JSON.stringify(value)).setMimeType(ContentService.MimeType.JSON); }
 function safeJsonParse_(text, fallback) { try { return JSON.parse(text); } catch (e) { return fallback; } }
@@ -567,7 +760,6 @@ function parseFlexibleDate_(value) {
 function formatUSDateTime_(value) { var d=parseFlexibleDate_(value)||new Date(); return Utilities.formatDate(d, Session.getScriptTimeZone() || 'Asia/Yangon', 'MM/dd/yyyy hh:mm:ss a'); }
 function nowUS_() { return formatUSDateTime_(new Date()); }
 `;
-
 
 export const GAS_INDEX_HTML = String.raw`<!DOCTYPE html>
 <html>

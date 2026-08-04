@@ -177,50 +177,68 @@ export const InventoryView: React.FC<InventoryViewProps> = ({
     }
   };
 
+  const normalizeText = (value: unknown) => String(value || '').trim().toLowerCase();
+
+  const matchesTypeFilter = (item: InventoryItem, filter: string) => {
+    if (!filter || filter === 'All') return true;
+
+    const wanted = normalizeText(filter);
+    const itemType = normalizeText(item.type);
+    const accessoryType = normalizeText(item.accessorytype || item.accessoryType);
+    const knownAccessoryTypes = accessoryCategories.map(normalizeText);
+
+    if (wanted === 'phone') {
+      return itemType === 'phone' || itemType === 'smartphone' || itemType === 'mobile phone';
+    }
+
+    if (wanted === 'accessories' || wanted === 'accessory') {
+      return itemType === 'accessories' ||
+        itemType === 'accessory' ||
+        Boolean(accessoryType) ||
+        knownAccessoryTypes.includes(itemType);
+    }
+
+    return itemType === wanted;
+  };
+
+  const matchesGradeFilter = (item: InventoryItem, filter: string) => {
+    if (!filter || filter === 'All') return true;
+    const grade = normalizeText(item.grade);
+    const wanted = normalizeText(filter);
+    if (wanted === 'new') return grade === 'new' || grade === 'brand new';
+    if (wanted === 'used') return grade === 'used' || grade === 'second hand' || grade === 'used / second hand';
+    return grade === wanted;
+  };
+
   const brands = useMemo(() => {
-    let items = inventory;
-    if (gradeFilter !== 'All') {
-      items = items.filter(p => (p.grade || '').toLowerCase() === gradeFilter.toLowerCase());
-    }
-    if (typeFilter !== 'All') {
-      items = items.filter(p => {
-        const type = (p.type || '').toLowerCase();
-        if (typeFilter === 'Phone') return type === 'phone' || type === 'smartphone';
-        return type === typeFilter.toLowerCase();
-      });
-    }
-    const allBrands = items.map(item => item.brand).filter(b => b && b !== '-');
-    return [...new Set(allBrands)].sort();
-  }, [inventory, gradeFilter, typeFilter]);
+    const items = inventory.filter(item => matchesTypeFilter(item, typeFilter) && matchesGradeFilter(item, gradeFilter));
+    const allBrands = items.map(item => String(item.brand || '').trim()).filter(brand => brand && brand !== '-');
+    return [...new Set(allBrands)].sort((a, b) => a.localeCompare(b));
+  }, [inventory, gradeFilter, typeFilter, accessoryCategories]);
 
   const filteredInventory = useMemo(() => {
-    let items = inventory;
-    if (searchQuery) {
-      const q = searchQuery.toLowerCase();
-      items = items.filter(p => 
-        String(p.model).toLowerCase().includes(q) || 
-        String(p.brand).toLowerCase().includes(q) ||
-        String(p.imei || p.productid || '').toLowerCase().includes(q) ||
-        String(p.barcode || '').toLowerCase().includes(q) ||
-        String(p.specification).toLowerCase().includes(q)
-      );
-    } else {
-      if (selectedBrand) {
-        items = items.filter(p => p.brand === selectedBrand);
-      }
-      if (gradeFilter !== 'All') {
-        items = items.filter(p => (p.grade || '').toLowerCase() === gradeFilter.toLowerCase());
-      }
-      if (typeFilter !== 'All') {
-        items = items.filter(p => {
-          const type = (p.type || '').toLowerCase();
-          if (typeFilter === 'Phone') return type === 'phone' || type === 'smartphone';
-          return type === typeFilter.toLowerCase();
-        });
-      }
-    }
-    return items;
-  }, [inventory, searchQuery, selectedBrand, gradeFilter, typeFilter]);
+    const q = normalizeText(searchQuery);
+
+    return inventory.filter(item => {
+      if (!matchesTypeFilter(item, typeFilter)) return false;
+      if (!matchesGradeFilter(item, gradeFilter)) return false;
+      if (selectedBrand && normalizeText(item.brand) !== normalizeText(selectedBrand)) return false;
+
+      if (!q) return true;
+      return [
+        item.model,
+        item.brand,
+        item.imei,
+        item.productid,
+        item.id,
+        item.barcode,
+        item.specification,
+        item.accessorytype,
+        item.accessoryType,
+        item.type,
+      ].some(value => normalizeText(value).includes(q));
+    });
+  }, [inventory, searchQuery, selectedBrand, gradeFilter, typeFilter, accessoryCategories]);
 
   return (
     <div className="space-y-6 pb-12">
